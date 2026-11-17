@@ -112,6 +112,16 @@ public:
     return opened_;
   }
 
+  // Host thread: ask the editor thread to map and fully repaint the window.
+  // Some hosts call guiShow when switching between plug-in windows without
+  // mapping the child themselves; relying on the initial XMapRaised is not
+  // enough in that case.
+  void show() {
+    showRequested_.store(true, std::memory_order_relaxed);
+  }
+
+  void hide() {}
+
   void close() {
     {
       std::lock_guard<std::mutex> lock(mutex_);
@@ -173,6 +183,8 @@ private:
     hints.max_height = static_cast<int>(maxSize.height);
     XSetWMNormalHints(dpy, win, &hints);
     XStoreName(dpy, win, kPluginName);
+    XSetWindowBackground(dpy, win, BlackPixel(dpy, screen));
+    XClearWindow(dpy, win);
     XMapRaised(dpy, win);
     XFlush(dpy);
 
@@ -222,6 +234,10 @@ private:
         if (quitting_) {
           break;
         }
+      }
+      if (showRequested_.exchange(false, std::memory_order_acq_rel)) {
+        XMapRaised(dpy, win);
+        XClearWindow(dpy, win);
       }
       const UiSize want = size();
       if (want.width != current.width || want.height != current.height) {
@@ -328,6 +344,13 @@ private:
                            fine);
         break;
       }
+      case Expose:
+      case MapNotify:
+      case VisibilityNotify:
+      case FocusIn:
+        // The paint loop runs continuously; these events are intentionally
+        // absorbed here so they never fall through to an unknown handler.
+        break;
       default:
         break;
     }
@@ -338,6 +361,7 @@ private:
   Panel panel_;
   std::atomic<double> scale_{1.0};
   std::atomic<bool> resizePending_{false};
+  std::atomic<bool> showRequested_{false};
   std::mutex mutex_;
   std::condition_variable cv_;
   Display* display_ = nullptr;
@@ -820,9 +844,15 @@ bool guiSetTransient(const clap_plugin_t*, const clap_window_t*) { return false;
 
 void guiSuggestTitle(const clap_plugin_t*, const char*) {}
 
-bool guiShow(const clap_plugin_t*) { return true; }
+bool guiShow(const clap_plugin_t* p) {
+  self(p)->editor.show();
+  return true;
+}
 
-bool guiHide(const clap_plugin_t*) { return true; }
+bool guiHide(const clap_plugin_t* p) {
+  self(p)->editor.hide();
+  return true;
+}
 
 const clap_plugin_gui_t kGuiExt = {
     guiIsApiSupported, guiGetPreferredApi, guiCreate, guiDestroy, guiSetScale,

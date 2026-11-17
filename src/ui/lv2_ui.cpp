@@ -124,6 +124,13 @@ struct Ui {
           draw();
         }
         break;
+      case MapNotify:
+      case VisibilityNotify:
+      case FocusIn:
+        // Switching host plug-in windows can remap the UI without a new
+        // configure event.  Force one clean frame.
+        dirty = true;
+        break;
       case ButtonPress: {
         const bool fine = (ev.xbutton.state & ShiftMask) != 0;
         if (ev.xbutton.button == Button4) {
