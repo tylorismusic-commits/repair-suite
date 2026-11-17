@@ -11,6 +11,7 @@
 #include <cstdint>
 
 #include <hdsp/db.hpp>
+#include <hdsp/envelope.hpp>
 #include <hdsp/smoother.hpp>
 
 #include "analyze.hpp"
@@ -34,6 +35,7 @@ public:
     declick_.prepare(sr_);
     dehum_.prepare(sr_);
     stft_.prepare(sr_, 2048, 512);
+    frameIndex_ = 2;
     denoise_.prepare(sr_, stft_.bins(), stft_.hopSize());
     dereverb_.prepare(sr_, stft_.bins(), stft_.hopSize());
     capture_.prepare(sr_, 30.0f);
@@ -41,6 +43,12 @@ public:
     outputGain_.setTime(15.0f, sr_);
     inputGain_.reset(1.0f);
     outputGain_.reset(1.0f);
+    for (auto& f : dc_) {
+      f.reset();
+    }
+    updateDryDelay();
+    dryBlockL_.assign(16384, 0.0f);
+    dryBlockR_.assign(16384, 0.0f);
     reset();
   }
 
@@ -51,9 +59,21 @@ public:
     if (c.analyze) {
       analyzer_.start();
     }
+    const int frameIndex = std::clamp(c.noiseFrame, 0, 3);
+    if (frameIndex != frameIndex_) {
+      frameIndex_ = frameIndex;
+      const int frame = 512 << frameIndex_;
+      stft_.prepare(sr_, frame, frame / 4);
+      denoise_.retune(sr_, stft_.bins(), stft_.hopSize());
+      dereverb_.prepare(sr_, stft_.bins(), stft_.hopSize());
+      updateDryDelay();
+    }
     declip_.setControls(c);
     declick_.setControls(c);
     dehum_.setControls(c);
+    for (auto& f : dc_) {
+      f.set(c.dcHz, sr_);
+    }
     denoise_.setControls(c);
     dereverb_.setControls(c);
     capture_.setArmed(c.captureArm);
@@ -62,15 +82,6 @@ public:
     }
     if (c.clearCapture) {
       capture_.reset();
-      if (c.analyze) {
-      analyzer_.start();
-    }
-    declip_.setControls(c);
-    declick_.setControls(c);
-    dehum_.setControls(c);
-    denoise_.setControls(c);
-    dereverb_.setControls(c);
-    capture_.setArmed(c.captureArm);
     }
     if (c.clearEdits) {
       capture_.clearEdits();
@@ -91,6 +102,12 @@ public:
     capture_.reset();
     inputGain_.reset(1.0f);
     outputGain_.reset(1.0f);
+    for (auto& f : dc_) {
+      f.reset();
+    }
+    updateDryDelay();
+    dryBlockL_.assign(16384, 0.0f);
+    dryBlockR_.assign(16384, 0.0f);
   }
 
   uint32_t latencySamples() const noexcept {
@@ -119,9 +136,25 @@ public:
       right[i] *= inGain;
     }
 
+    // Capture the dry signal for Delta monitoring.  The ring is read one
+    // sample ahead so its output is delayed by the full chain latency.
+    const int dryFrames = std::min(frames, static_cast<int>(dryBlockL_.size()));
+    for (int i = 0; i < dryFrames; ++i) {
+      dryBlockL_[static_cast<size_t>(i)] = left[i];
+      dryBlockR_[static_cast<size_t>(i)] = right[i];
+    }
+
     // De-Clip runs first, directly on the input, before any filtering.  It
     // always runs, even when bypassed, so the reported latency stays exact.
     declip_.process(left, right, frames);
+
+    // DC / rumble filter, after De-Clip and before the detectors.
+    if (controls_.dcOn && controls_.power) {
+      for (int i = 0; i < frames; ++i) {
+        left[i] = dc_[0].process(left[i]);
+        right[i] = dc_[1].process(right[i]);
+      }
+    }
 
     // De-Click runs next, before hum and broadband cleanup.
     declick_.process(left, right, frames);
@@ -140,12 +173,26 @@ public:
     // The spectral tap is after De-Reverb and before Output trim, so the
     // editor sees exactly what the final chain produces.
     capture_.push(left, right, frames, hostTime, hostTimeValid);
-    capture_.applyOverlay(left, right, frames, hostTime, hostTimeValid);
+    if (controls_.specOn && controls_.power) {
+      capture_.applyOverlay(left, right, frames, hostTime, hostTimeValid);
+    }
 
     const float outGain = outputGain_.next();
     for (int i = 0; i < frames; ++i) {
       left[i] *= outGain;
       right[i] *= outGain;
+      if (drySize_ > 0 && i < static_cast<int>(dryBlockL_.size())) {
+        const int read = (dryWrite_ + 1) % drySize_;
+        const float dryL = dryL_[static_cast<size_t>(read)];
+        const float dryR = dryR_[static_cast<size_t>(read)];
+        dryL_[static_cast<size_t>(dryWrite_)] = dryBlockL_[static_cast<size_t>(i)];
+        dryR_[static_cast<size_t>(dryWrite_)] = dryBlockR_[static_cast<size_t>(i)];
+        dryWrite_ = (dryWrite_ + 1) % drySize_;
+        if (controls_.delta && controls_.power) {
+          left[i] -= dryL;
+          right[i] -= dryR;
+        }
+      }
       peakOut = std::max(peakOut, std::max(std::fabs(left[i]),
                                            std::fabs(right[i])));
     }
@@ -200,6 +247,14 @@ public:
   }
 
 private:
+  void updateDryDelay() noexcept {
+    dryLatency_ = static_cast<int>(latencySamples());
+    drySize_ = dryLatency_ + 1;
+    dryL_.assign(static_cast<size_t>(drySize_), 0.0f);
+    dryR_.assign(static_cast<size_t>(drySize_), 0.0f);
+    dryWrite_ = 0;
+  }
+
   float sr_ = 48000.0f;
   Controls controls_;
   Analyzer analyzer_;
@@ -212,6 +267,13 @@ private:
   SpectralCapture capture_;
   hdsp::Smoothed inputGain_;
   hdsp::Smoothed outputGain_;
+  hdsp::HighPass2 dc_[2];
+  int dryLatency_ = 0;
+  int drySize_ = 1;
+  std::vector<float> dryL_, dryR_;
+  std::vector<float> dryBlockL_, dryBlockR_;
+  int dryWrite_ = 0;
+  int frameIndex_ = 2;
 };
 
 } // namespace repair

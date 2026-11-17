@@ -224,6 +224,8 @@ void updateTempo(Plugin* p) {
 void activate(LV2_Handle handle) {
   auto* p = static_cast<Plugin*>(handle);
   p->engine.reset();
+  p->shared.latencySamples.store(p->engine.latencySamples(),
+                                 std::memory_order_relaxed);
   if (p->latency) {
     *p->latency = static_cast<float>(p->engine.latencySamples());
   }
@@ -335,6 +337,8 @@ void run(LV2_Handle handle, uint32_t frames) {
   }
   if (p->hostBpm) *p->hostBpm = 0.0f;
   if (p->hostTempo) *p->hostTempo = 0.0f;
+  p->shared.latencySamples.store(p->engine.latencySamples(),
+                                 std::memory_order_relaxed);
   if (p->latency) {
     *p->latency = static_cast<float>(p->engine.latencySamples());
   }

@@ -368,6 +368,7 @@ struct Plugin {
   std::atomic<int> infoModel{-1};
   std::atomic<int> reportedOversample{-1};
   std::atomic<uint32_t> reportedLatency{0xffffffffu};
+  std::atomic<bool> latencyRefresh{false};
   std::atomic<bool> rescanQueued{false};
   std::atomic<bool> active{false};
 };
@@ -990,6 +991,15 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
                               std::memory_order_relaxed);
   s->shared.humDetectedHz.store(s->meters.humDetectedHz,
                                 std::memory_order_relaxed);
+  s->shared.latencySamples.store(s->engine.latencySamples(),
+                                 std::memory_order_relaxed);
+  if (s->engine.latencySamples() !=
+      s->reportedLatency.load(std::memory_order_relaxed)) {
+    s->latencyRefresh.store(true, std::memory_order_release);
+    if (s->host && s->host->request_callback) {
+      s->host->request_callback(s->host);
+    }
+  }
   noteHostChanges(s);
   return CLAP_PROCESS_CONTINUE;
 }
@@ -1016,7 +1026,21 @@ const void* pluginGetExtension(const clap_plugin_t*, const char* id) {
   return nullptr;
 }
 
-void pluginOnMainThread(const clap_plugin_t*) {}
+void pluginOnMainThread(const clap_plugin_t* p) {
+  Plugin* s = self(p);
+  if (!s->latencyRefresh.exchange(false, std::memory_order_acq_rel)) {
+    return;
+  }
+  const uint32_t latencyNow = s->engine.latencySamples();
+  s->reportedLatency.store(latencyNow, std::memory_order_relaxed);
+  if (s->host && s->host->get_extension) {
+    const auto* latency = static_cast<const clap_host_latency_t*>(
+        s->host->get_extension(s->host, CLAP_EXT_LATENCY));
+    if (latency && latency->changed) {
+      latency->changed(s->host);
+    }
+  }
+}
 
 Plugin* createPlugin(const clap_host_t* host) {
   Plugin* s = new Plugin();

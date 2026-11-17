@@ -146,7 +146,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:index 8 ;
   lv2:symbol "dc_on" ;
   lv2:name "DC Filter" ;
-  lv2:default 1 ;
+  lv2:default 0 ;
   lv2:minimum 0 ;
   lv2:maximum 1 ;
   lv2:portProperty lv2:integer ;

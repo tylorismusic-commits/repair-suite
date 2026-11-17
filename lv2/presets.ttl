@@ -109,7 +109,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 30 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -163,7 +163,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -217,7 +217,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -271,7 +271,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -325,7 +325,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -379,7 +379,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -433,7 +433,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 2 ] ;
@@ -487,7 +487,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -541,7 +541,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -595,7 +595,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -649,7 +649,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -703,7 +703,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -757,7 +757,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -811,7 +811,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -865,7 +865,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -919,7 +919,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -973,7 +973,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -1027,7 +1027,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -1081,7 +1081,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -1135,7 +1135,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -1189,7 +1189,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;
@@ -1243,7 +1243,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 1 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 1 ] ;
@@ -1297,7 +1297,7 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "input" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "output" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "delta" ; pset:value 0 ] ;
-  lv2:port [ lv2:symbol "dc_on" ; pset:value 1 ] ;
+  lv2:port [ lv2:symbol "dc_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "dc_freq" ; pset:value 20 ] ;
   lv2:port [ lv2:symbol "clip_on" ; pset:value 0 ] ;
   lv2:port [ lv2:symbol "clip_mode" ; pset:value 0 ] ;

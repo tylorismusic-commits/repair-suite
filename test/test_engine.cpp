@@ -613,6 +613,98 @@ void testProfilePersistence() {
 }
 
 
+
+void testDeltaAndDc() {
+  const int n = 16000;
+  std::vector<float> clean(n), clipped(n);
+  for (int i = 0; i < n; ++i) {
+    clean[i] = 0.2f * sine(i, 220.0);
+    clipped[i] = std::clamp(0.7f * sine(i, 220.0), -0.4f, 0.4f);
+  }
+  repair::Controls off;
+  off.clipOn = false;
+  off.clickOn = false;
+  off.humOn = false;
+  off.noiseOn = false;
+  off.verbOn = false;
+  off.specOn = false;
+  off.dcOn = false;
+  off.delta = true;
+
+  repair::Engine engine;
+  engine.prepare(kSr);
+  engine.setControls(off);
+  repair::Meters meters;
+  std::vector<float> l = clean;
+  std::vector<float> r = clean;
+  for (int start = 0; start < n; start += 256) {
+    const int len = std::min(256, n - start);
+    engine.process(l.data() + start, r.data() + start, len, meters,
+                   start / static_cast<double>(kSr), true);
+  }
+  double deltaRms = 0.0;
+  for (int i = 4221 + 4096; i < n; ++i) {
+    deltaRms += static_cast<double>(l[static_cast<size_t>(i)]) *
+                l[static_cast<size_t>(i)];
+  }
+  deltaRms = std::sqrt(deltaRms / (n - 4221 - 4096));
+  std::printf("delta clean residual %.6f\n", deltaRms);
+  assert(deltaRms < 2.0e-4);
+
+  repair::Controls clip = off;
+  clip.clipOn = true;
+  clip.clipAuto = false;
+  clip.clipUpperDb = -7.96f;
+  clip.clipLowerDb = -7.96f;
+  clip.delta = true;
+  repair::Engine clipEngine;
+  clipEngine.prepare(kSr);
+  clipEngine.setControls(clip);
+  l = clipped;
+  r = clipped;
+  for (int start = 0; start < n; start += 256) {
+    const int len = std::min(256, n - start);
+    clipEngine.process(l.data() + start, r.data() + start, len, meters,
+                       start / static_cast<double>(kSr), true);
+  }
+  double removed = 0.0;
+  for (int i = 4221 + 4096; i < n; ++i) {
+    removed += static_cast<double>(l[static_cast<size_t>(i)]) *
+               l[static_cast<size_t>(i)];
+  }
+  removed = std::sqrt(removed / (n - 4221 - 4096));
+  std::printf("delta clip residual %.6f\n", removed);
+  assert(removed > 1.0e-3);
+
+  // DC/rumble filter removes a 10 Hz component and preserves 1 kHz.
+  std::vector<float> dcIn(n), dcOut(n);
+  for (int i = 0; i < n; ++i) {
+    dcIn[i] = 0.2f * sine(i, 10.0) + 0.2f * sine(i, 1000.0);
+  }
+  repair::Controls dc = off;
+  dc.delta = false;
+  dc.dcOn = true;
+  dc.dcHz = 30.0f;
+  repair::Engine dcEngine;
+  dcEngine.prepare(kSr);
+  dcEngine.setControls(dc);
+  dcOut = dcIn;
+  for (int start = 0; start < n; start += 256) {
+    const int len = std::min(256, n - start);
+    dcEngine.process(dcOut.data() + start, dcOut.data() + start, len, meters,
+                     start / static_cast<double>(kSr), true);
+  }
+  const double lowIn = toneMag(dcIn, 10.0f, 4221 + 4096, n - 4221 - 4096);
+  const double lowOut = toneMag(dcOut, 10.0f, 4221 + 4096, n - 4221 - 4096);
+  const double highIn = toneMag(dcIn, 1000.0f, 4221 + 4096, n - 4221 - 4096);
+  const double highOut = toneMag(dcOut, 1000.0f, 4221 + 4096, n - 4221 - 4096);
+  std::printf("dc 10 Hz %.1f dB, 1 kHz %.2f dB\n",
+              20.0 * std::log10(lowOut / lowIn),
+              20.0 * std::log10(highOut / highIn));
+  assert(lowOut < lowIn * 0.5);
+  assert(std::fabs(20.0 * std::log10(highOut / highIn)) < 0.5);
+}
+
 void testAnalysis() {
   repair::Engine engine;
   engine.prepare(kSr);
@@ -645,6 +737,27 @@ void testAnalysis() {
   assert(meters.analysisHumHz > 49.0f && meters.analysisHumHz < 61.0f);
   assert(meters.analysisHumDb > -30.0f);
   assert(meters.analysisClipPct > 0.0f);
+}
+
+
+void testFrameSizes() {
+  repair::Engine engine;
+  engine.prepare(kSr);
+  repair::Controls c;
+  c.noiseFrame = 0;  // 512-sample STFT
+  c.noiseOn = true;
+  engine.setControls(c);
+  assert(engine.latencySamples() < 4221);
+  repair::Meters meters;
+  std::vector<float> l(512), r(512);
+  for (int i = 0; i < 512; ++i) {
+    l[static_cast<size_t>(i)] = r[static_cast<size_t>(i)] = 0.1f * sine(i, 440.0);
+  }
+  engine.process(l.data(), r.data(), 512, meters, 0.0, true);
+  for (float v : l) {
+    assert(std::isfinite(v));
+  }
+  std::printf("frame 512 latency %u\n", engine.latencySamples());
 }
 
 void testPresets() {
@@ -683,6 +796,8 @@ int main() {
   testDereverb();
   testProfilePersistence();
   testAnalysis();
+  testDeltaAndDc();
+  testFrameSizes();
   testPresets();
   std::printf("DSP tests passed\n");
   return 0;

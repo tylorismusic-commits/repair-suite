@@ -11,7 +11,7 @@ struct Controls {
   bool delta = false;
   float inputDb = 0.0f;
   float outputDb = 0.0f;
-  bool dcOn = true;
+  bool dcOn = false;
   float dcHz = 20.0f;
 
   bool clipOn = true;

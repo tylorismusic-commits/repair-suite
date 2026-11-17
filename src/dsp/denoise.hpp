@@ -34,6 +34,28 @@ public:
     reset();
   }
 
+  void retune(float sampleRate, int bins, int hop) noexcept {
+    std::vector<float> old = noise_;
+    const int oldBins = bins_;
+    const bool wasLearned = learned_;
+    prepare(sampleRate, bins, hop);
+    if (wasLearned && oldBins > 1 && bins_ > 1) {
+      for (int k = 0; k < bins_; ++k) {
+        const float pos = static_cast<float>(k) *
+                          static_cast<float>(oldBins - 1) /
+                          static_cast<float>(bins_ - 1);
+        const int i0 = std::min(static_cast<int>(pos), oldBins - 2);
+        const int i1 = i0 + 1;
+        const float t = pos - static_cast<float>(i0);
+        noise_[static_cast<size_t>(k)] =
+            (1.0f - t) * old[static_cast<size_t>(i0)] +
+            t * old[static_cast<size_t>(i1)];
+      }
+      learned_ = true;
+      profileReady_.store(true, std::memory_order_release);
+    }
+  }
+
   void reset() noexcept {
     std::fill(noise_.begin(), noise_.end(), 0.0f);
     std::fill(smoothGain_.begin(), smoothGain_.end(), 1.0f);
@@ -50,6 +72,7 @@ public:
     controls_ = c;
     mix_ = std::clamp(c.noiseMix * 0.01f, 0.0f, 1.0f);
     floorGain_ = hdsp::dbToGain(-std::clamp(c.noiseReductionDb, 0.0f, 60.0f));
+    tonalFloorGain_ = hdsp::dbToGain(-std::clamp(c.noiseTonalDb, 0.0f, 60.0f));
     smoothCoeff_ = std::clamp(c.noiseSmoothing * 0.09f, 0.0f, 0.9f);
     transientThreshold_ =
         1.0f + std::max(0.0f, 10.0f - c.noiseTransient) * 0.5f;
@@ -160,8 +183,22 @@ public:
     for (int k = 0; k < bins; ++k) {
       const float p = power(reL[k], imL[k], reR[k], imR[k]);
       const float n = noise_[static_cast<size_t>(k)] + 1.0e-12f;
+      float floor = floorGain_;
+      if (controls_.noiseTonalDb > 0.1f) {
+        float neighbour = 0.0f;
+        int count = 0;
+        for (int j = std::max(1, k - 3); j <= std::min(bins - 2, k + 3); ++j) {
+          if (j != k) {
+            neighbour += noise_[static_cast<size_t>(j)];
+            ++count;
+          }
+        }
+        if (count > 0 && n > 2.0f * neighbour / count) {
+          floor = std::min(floor, tonalFloorGain_);
+        }
+      }
       float g = 1.0f - 1.5f * n / (p + 1.0e-12f);
-      g = std::max(g, floorGain_);
+      g = std::max(g, floor);
       // Transient hold: do not gate a bin that just jumped.
       if (p > prevPower_[static_cast<size_t>(k)] * transientThreshold_) {
         g = std::max(g, 0.9f);
@@ -206,6 +243,7 @@ private:
   std::atomic<bool> profileReady_{false};
   float mix_ = 1.0f;
   float floorGain_ = 0.1f;
+  float tonalFloorGain_ = 0.25f;
   float smoothCoeff_ = 0.45f;
   float transientThreshold_ = 4.0f;
   float lastReductionDb_ = 0.0f;

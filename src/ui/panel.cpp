@@ -620,6 +620,7 @@ bool Panel::applySpectralEdit(Shared& shared, PanelState& state) {
   const int op = static_cast<int>(shared.get(P_SPEC_OP) + 0.5);
   const float amount = shared.get(P_SPEC_AMOUNT);
   const float mix = static_cast<float>(shared.get(P_SPEC_MIX) * 0.01);
+  const bool preserve = shared.get(P_SPEC_PRESERVE) > 0.5;
   int lo = static_cast<int>(f0 * kN / sr);
   int hi = static_cast<int>(f1 * kN / sr);
   lo = std::clamp(lo, 1, kN / 2 - 2);
@@ -695,7 +696,7 @@ bool Panel::applySpectralEdit(Shared& shared, PanelState& state) {
       }
       float gain = 1.0f;
       if (op == 1) {
-        gain = 0.0f;
+        gain = preserve ? std::pow(10.0f, -60.0f / 20.0f) : 0.0f;
       } else if (op == 5) {
         gain = std::pow(10.0f, std::clamp(amount, 0.0f, 20.0f) / 20.0f);
       } else if (op == 0 || op == 4) {
@@ -1693,7 +1694,12 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
   setRgb(cr, kEdge, 0.55);
   cairo_rectangle(cr, 24, f, kPanelWidth - 48, 1);
   cairo_fill(cr);
-  const double latencyMs = 4221.0 / 48.0;  // declip + STFT, 48 kHz
+  const uint32_t latencySamples =
+      shared.latencySamples.load(std::memory_order_relaxed);
+  const double sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double latencyMs = latencySamples > 0
+                               ? static_cast<double>(latencySamples) / sr * 1000.0
+                               : 0.0;
   char status[160];
   std::snprintf(status, sizeof(status),
                 "STFT 2048 / 75%%  ·  latency %.1f ms  ·  capture %.1f s  ·  "

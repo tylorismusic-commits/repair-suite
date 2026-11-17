@@ -135,7 +135,7 @@ inline constexpr ParamSpec kParamSpecs[P_COUNT] = {
      {}, -6.0, 6.0},
     {"delta", "Delta", "Global", 0.0, 1.0, 0.0, true, false, true, nullptr, {},
      0.0, 1.0},
-    {"dc_on", "DC Filter", "Output", 0.0, 1.0, 1.0, true, false, true, nullptr,
+    {"dc_on", "DC Filter", "Output", 0.0, 1.0, 0.0, true, false, true, nullptr,
      {}, 0.0, 1.0},
     {"dc_freq", "Rumble", "Output", 5.0, 60.0, 20.0, false, false, false, "Hz",
      {}, 10.0, 30.0},
@@ -291,6 +291,7 @@ public:
     clipActivity.store(0.0f, std::memory_order_relaxed);
     clickEvents.store(0, std::memory_order_relaxed);
     humDetectedHz.store(0.0f, std::memory_order_relaxed);
+    latencySamples.store(4221, std::memory_order_relaxed);
     for (int i = 0; i < kProfileBins; ++i) {
       noiseProfile[i].store(0.0f);
     }
@@ -410,6 +411,7 @@ public:
   std::atomic<float> clipActivity;
   std::atomic<int> clickEvents;
   std::atomic<float> humDetectedHz;
+  std::atomic<uint32_t> latencySamples;
   std::atomic<float> bpm;      // reserved for later tempo-synced capture
   std::atomic<bool> hostTempo;
 
