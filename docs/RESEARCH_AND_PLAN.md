@@ -1,29 +1,53 @@
 # Repair Suite — Research and Plan
 
-Status: Phase 1 automatic chain complete · 2026-11-17
+Status: feature-complete alpha candidate · 2026-11-17
 Target: first public alpha `0.1.0-alpha.1` for Linux x86_64, CLAP + LV2
 Licence: GPL-3.0-or-later
 
 ---
 
+## Current release position
+
+The plug-in is feature-complete for the planned 0.1 scope.  What remains is
+release work rather than missing modules:
+
+- Real-material listening and preset tuning on vinyl, dialogue, drums, bass
+  and clipped material.
+- Host QA in at least two real DAWs (REAPER and Ardour are the intended pair).
+- A short CPU/state-size profiling pass at 44.1, 48 and 96 kHz.
+- CI/build matrix, release tarballs and final packaging.
+- Optional stem-app polish: batch queue, stem QC report and a handoff manifest.
+
+The offline stem companion is an additional deliverable beyond the original
+0.1 plug-in scope and is already usable.
+
 ## Phase 1 status (2026-11-17)
 
-All five automatic repair modules are now wired into the chain: De-Clip,
-De-Click, De-Hum, De-Noise and De-Reverb.  The spectral editor, precision
-re-synthesis and adaptive/tonal refinements remain.
+All five automatic repair modules are wired into the chain: De-Clip, De-Click,
+De-Hum, De-Noise and De-Reverb.  The spectral editor, precision re-synthesis,
+adaptive/tonal refinements and stem companion are now also implemented.
 
 
 - [x] Copy the suite scaffold and rename it to Repair Suite.
 - [x] CLAP + LV2 bundles build and load in host smoke tests.
-- [x] 48 host parameters covering all planned modules.
-- [x] 1200×760 panel skeleton with seven pages and wired controls.
+- [x] 50 host parameters covering all planned modules plus monitoring.
+- [x] 1200×760 panel with seven pages, persistent monitor strip and wired controls.
 - [x] Shared real-time STFT (2048 / 75%) with identity reconstruction tests.
-- [x] Spectral capture/overlay prototype with host-time anchors and tests.
+- [x] Spectral capture/overlay with host-time anchors and tests.
 - [x] Wire all five automatic repair modules into the chain.
 - [x] CLAP/LV2 UI smoke tests under Xvfb.
 - [x] Add the noise-profile state blob (CLAP and LV2 state).
-- [ ] Add spectral-edit state blobs.
-- [ ] Prototype host transport in a real DAW against the capture overlay.
+- [x] Add spectral-edit state blobs in CLAP and LV2 state.
+- [x] Prototype host transport against the capture overlay; stale-timeline warning included.
+- [x] RX-style monitor strip, A/B bypass, global and per-stage Delta.
+- [x] Typed values, double-click reset, parameter undo/redo and tooltips.
+- [x] Auto Analyze review panel with per-module apply checkboxes.
+- [x] De-Clip histogram with draggable thresholds.
+- [x] De-Hum harmonic table and Solo Hum.
+- [x] De-Noise profile/target curve, residual monitor and frame-size reporting.
+- [x] De-Click event list and click-stage audition.
+- [x] Spectral harmonic selection, named history and gamma/range controls.
+- [x] Offline stem companion (`repair-separate`, `repair-stems`).
 
 ## 1. Product thesis
 
@@ -72,7 +96,9 @@ Design principles:
 
 ### Explicit non-goals for 0.1
 
-- Machine-learning source separation, dialogue isolation or voice extraction.
+- Machine-learning source separation, dialogue isolation or voice extraction
+  **inside the real-time plug-in**.  An offline stem companion exists; a model
+  does not run in the audio callback.
 - A separate standalone editor application. Spectral repair lives in the
   plug-in; a standalone/ARA path remains a future option.
 - ARA 2 integration. CLAP/LV2 do not provide ARA; a VST3/ARA build is a major
@@ -766,19 +792,21 @@ as audition-only in the first alpha.
 ### Phase 1 — first audible alpha (2–3 weeks)
 
 - [x] De-Clip High (iterative, default), Balanced and Fast modes; auto
-  threshold; mix and output headroom.  Histogram/waveform overlay UI still to
-  come.
+  threshold; mix and output headroom.
+- [x] De-Clip histogram with draggable upper/lower thresholds and target-peak
+  readout.
 - [x] De-Click click/crackle detection with median-residual detection and
   cubic repair; thump and dropout modes added.
 - [x] De-Hum notch + automatic 50/60 Hz harmonic scoring.
 - [x] Precision hum mode (adaptive harmonic cancellation).
 - [x] De-Noise learn + spectral subtraction + transient hold; adaptive
-  bootstrap added.  Tonal split still to come.
+  bootstrap, tonal split, profile curve and residual monitor added.
 - [x] De-Reverb late-tail reduction sharing the De-Noise STFT.  Music-mode
   tuning and WPE speech mode still to come.
-- Chain, per-stage bypass/mix, meters, Delta, typed values, presets v1.
-- UI pages and live spectrum. Spectrogram page present but read-only.
-- Alpha build for manual testing.
+- [x] Chain, per-stage bypass/mix, meters, global/per-stage Delta, typed
+  values, presets and monitoring.
+- [x] UI pages, live monitors and full spectral editor.
+- [x] Alpha build for manual testing.
 
 ### Phase 2 — spectral repair v1 (2–3 weeks)
 
@@ -799,14 +827,19 @@ as audition-only in the first alpha.
 - [x] 2D spectral-template Match (repeat the last repair at similar events).
 - [x] Precision hum mode.
 - [x] Auto Analyze (three-second input measurement + conservative apply).
-- CPU pass, low-latency denoise mode, state-size limits.
+- [~] CPU/state-size pass: low-latency denoise and state limits are in;
+  profiling at all sample rates is still outstanding.
 - [x] Preset browser UI and dirty-state navigation.
-- Preset tuning against the manual test matrix.
-- Documentation, screenshots, release packaging, CI matrix.
-- `0.1.0` release with LV2 + CLAP tarballs.
+- [ ] Preset tuning against the manual listening matrix.
+- [x] Documentation and screenshots.
+- [~] Release packaging: PKGBUILD and desktop files exist; CI matrix and
+  signed/tarball release still outstanding.
+- [ ] `0.1.0` release with LV2 + CLAP tarballs.
+- [x] Offline stem separation companion and standalone GUI (beyond 0.1 scope).
 
 ### Later
 
+- Stem companion batch queue, QC report and DAW handoff manifest.
 - WPE-based speech de-reverb mode, only if the spectral mode leaves a clear gap.
 - Advanced match/find-similar-events (the basic repeat-match is in 0.1).
 - ARA 2 via a separate VST3 build, if Linux host support makes it worthwhile.
@@ -841,7 +874,8 @@ as audition-only in the first alpha.
   patch are enough for 0.1. Match/find-similar, layers and batch processing are
   a different product.
 
-**Open questions for Tylor**
+**Open questions for Tylor** — most are now answered by the implementation;
+left here as design history.
 
 1. **Spectral workflow:** is the capture-and-overlay model acceptable (works
    with host transport, edits anchored to time, re-capture after moving the
