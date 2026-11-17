@@ -8,6 +8,7 @@
 #include "dsp/declick.hpp"
 #include "dsp/dehum.hpp"
 #include "dsp/denoise.hpp"
+#include "dsp/dereverb.hpp"
 #include "dsp/engine.hpp"
 #include "dsp/spectral_capture.hpp"
 #include "dsp/stft.hpp"
@@ -391,6 +392,67 @@ void testDenoise() {
   assert(std::fabs(20.0 * std::log10(toneOut / toneIn)) < 1.0);
 }
 
+
+void testDereverb() {
+  const int sr = static_cast<int>(kSr);
+  const int n = 3 * sr;
+  std::vector<float> in(static_cast<size_t>(n), 0.0f);
+  uint32_t seed = 1;
+  auto rnd = [&]() {
+    seed = seed * 1664525u + 1013904223u;
+    return static_cast<float>(static_cast<int32_t>(seed >> 8)) / 8388608.0f;
+  };
+  for (int b = 0; b < 4; ++b) {
+    const int start = b * sr * 3 / 4;
+    if (start >= n) {
+      break;
+    }
+    for (int i = 0; i < 960 && start + i < n; ++i) {
+      in[static_cast<size_t>(start + i)] += 0.4f * sine(i, 1000.0);
+    }
+    for (int i = 0; i < 14400 && start + 960 + i < n; ++i) {
+      const float env = std::exp(-static_cast<float>(i) / (0.15f * sr));
+      in[static_cast<size_t>(start + 960 + i)] += 0.08f * env * rnd();
+    }
+  }
+  repair::Stft stft;
+  stft.prepare(kSr, 2048, 512);
+  repair::Dereverb dereverb;
+  dereverb.prepare(kSr, stft.bins(), stft.hopSize());
+  repair::Controls c;
+  c.verbOn = true;
+  c.verbAmountDb = 12.0f;
+  c.verbTailSec = 0.8f;
+  c.verbPredelayMs = 30.0f;
+  c.verbTransient = 6.0f;
+  c.verbTiltDb = 0.0f;
+  c.verbMix = 100.0f;
+  dereverb.setControls(c);
+  std::vector<float> l = in;
+  std::vector<float> r = in;
+  for (int start = 0; start < n; start += 512) {
+    const int len = std::min(512, n - start);
+    stft.process(l.data() + start, r.data() + start, len,
+                 [&](float* reL, float* imL, float* reR, float* imR, int bins) {
+                   dereverb.processBins(reL, imL, reR, imR, bins);
+                 });
+  }
+  const int latency = stft.latencySamples();
+  for (int b = 1; b < 3; ++b) {
+    const int start = b * sr * 3 / 4;
+    const int at = start + latency;
+    const double directIn = rmsRange(in, start, 960);
+    const double directOut = rmsRange(l, at, 960);
+    const double tailIn = rmsRange(in, start + 2000, 10000);
+    const double tailOut = rmsRange(l, at + 2000, 10000);
+    std::printf("dereverb burst %d direct %.2f dB tail %.2f dB\n", b,
+                20.0 * std::log10(directOut / directIn),
+                20.0 * std::log10(tailOut / tailIn));
+    assert(std::fabs(20.0 * std::log10(directOut / directIn)) < 1.5);
+    assert(20.0 * std::log10(tailOut / tailIn) < -3.0);
+  }
+}
+
 void testPresets() {
   for (const repair::Preset& p : repair::factoryPresets()) {
     repair::Shared s;
@@ -423,6 +485,7 @@ int main() {
   testDeclick();
   testDehum();
   testDenoise();
+  testDereverb();
   testPresets();
   std::printf("DSP tests passed\n");
   return 0;

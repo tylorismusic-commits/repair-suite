@@ -18,6 +18,7 @@
 #include "declick.hpp"
 #include "dehum.hpp"
 #include "denoise.hpp"
+#include "dereverb.hpp"
 #include "spectral_capture.hpp"
 #include "stft.hpp"
 
@@ -32,6 +33,7 @@ public:
     dehum_.prepare(sr_);
     stft_.prepare(sr_, 2048, 512);
     denoise_.prepare(sr_, stft_.bins(), stft_.hopSize());
+    dereverb_.prepare(sr_, stft_.bins(), stft_.hopSize());
     capture_.prepare(sr_, 30.0f);
     inputGain_.setTime(15.0f, sr_);
     outputGain_.setTime(15.0f, sr_);
@@ -50,6 +52,7 @@ public:
     declick_.setControls(c);
     dehum_.setControls(c);
     denoise_.setControls(c);
+    dereverb_.setControls(c);
     capture_.setArmed(c.captureArm);
     if (c.captureFreeze) {
       capture_.freeze();
@@ -60,6 +63,7 @@ public:
     declick_.setControls(c);
     dehum_.setControls(c);
     denoise_.setControls(c);
+    dereverb_.setControls(c);
     capture_.setArmed(c.captureArm);
     }
     if (c.clearEdits) {
@@ -77,6 +81,7 @@ public:
     declick_.reset();
     dehum_.reset();
     denoise_.reset();
+    dereverb_.reset();
     stft_.reset();
     capture_.reset();
     inputGain_.reset(1.0f);
@@ -129,6 +134,7 @@ public:
                   [this](float* reL, float* imL, float* reR, float* imR,
                          int bins) {
                     denoise_.processBins(reL, imL, reR, imR, bins);
+                    dereverb_.processBins(reL, imL, reR, imR, bins);
                   });
 
     const float outGain = outputGain_.next();
@@ -147,7 +153,7 @@ public:
     meters.outPeakRDb = meters.outPeakDb;
     meters.grDb = 0.0f;
     meters.noiseGrDb = denoise_.lastReductionDb();
-    meters.verbGrDb = 0.0f;
+    meters.verbGrDb = dereverb_.lastReductionDb();
     meters.specActive = capture_.editCount() > 0 ? 1.0f : 0.0f;
     meters.noiseFloorDb = meters.inPeakDb;
     meters.captureSeconds = capture_.capturedSeconds();
@@ -169,6 +175,7 @@ private:
   Declick declick_;
   Dehum dehum_;
   Denoise denoise_;
+  Dereverb dereverb_;
   Stft stft_;
   SpectralCapture capture_;
   hdsp::Smoothed inputGain_;
