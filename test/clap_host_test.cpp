@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
   assert(latency);
   const uint32_t reported = latency->get(plugin);
   std::printf("latency: %u samples\n", reported);
-  assert(reported == 3582);
+  assert(reported == 4221);
 
   float inL[64] = {};
   float inR[64] = {};

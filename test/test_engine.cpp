@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "dsp/declick.hpp"
 #include "dsp/engine.hpp"
 #include "dsp/spectral_capture.hpp"
 #include "dsp/stft.hpp"
@@ -153,7 +154,7 @@ void testDeclip() {
       engine.process(l.data() + start, r.data() + start, len, meters,
                      start / static_cast<double>(kSr), true);
     }
-    sdr[mode] = sdrAt(l, orig, 3582);
+    sdr[mode] = sdrAt(l, orig, 4221);
   }
   std::printf("declip SDR High %.2f Balanced %.2f Fast %.2f dB\n", sdr[0],
               sdr[1], sdr[2]);
@@ -164,14 +165,14 @@ void testDeclip() {
 void testEngine() {
   repair::Engine engine;
   engine.prepare(kSr);
-  assert(engine.latencySamples() == 3582);
+  assert(engine.latencySamples() == 4221);
   repair::Meters meters;
   repair::Controls c;
   c.inputDb = 0.0f;
   c.outputDb = 0.0f;
   engine.setControls(c);
 
-  const int n = 8192;
+  const int n = 16000;
   std::vector<float> l(n), inL(n), r(n), inR(n);
   for (int i = 0; i < n; ++i) {
     inL[i] = inR[i] = sine(i, 220.0, 0.2f);
@@ -185,15 +186,60 @@ void testEngine() {
   }
   bool finite = true;
   double err = 0.0;
-  for (int i = 3582 + 4096; i < n; ++i) {
+  for (int i = 4221 + 4096; i < n; ++i) {
     finite = finite && std::isfinite(l[i]);
-    err += std::fabs(l[i] - inL[i - 3582]);
+    err += std::fabs(l[i] - inL[i - 4221]);
   }
   std::printf("engine finite=%d mean error %.6f\n", finite,
-              err / (n - 3582 - 4096));
+              err / (n - 4221 - 4096));
   assert(finite);
-  assert(err / (n - 3582 - 4096) < 2.0e-4);
+  assert(err / (n - 4221 - 4096) < 2.0e-4);
   assert(std::isfinite(meters.outPeakDb));
+}
+
+
+void testDeclick() {
+  const int n = 12000;
+  std::vector<float> clean(n), noisy(n);
+  for (int i = 0; i < n; ++i) {
+    clean[i] = 0.2f * sine(i, 220.0);
+    noisy[i] = clean[i];
+  }
+  for (int p : {2000, 5000, 8000}) {
+    noisy[static_cast<size_t>(p)] += 0.8f;
+  }
+  repair::Declick declick;
+  declick.prepare(kSr);
+  repair::Controls c;
+  c.clickOn = true;
+  c.clickLink = true;
+  c.clickSensitivity = 5.0f;
+  c.clickWidthMs = 5.0f;
+  declick.setControls(c);
+  std::vector<float> l = noisy;
+  std::vector<float> r = noisy;
+  declick.process(l.data(), r.data(), n);
+  const int latency = declick.latencySamples();
+  assert(latency == 639);
+  std::printf("declick latency %d count %d\n", latency, declick.clickCount());
+  assert(declick.clickCount() >= 3);
+  for (int p : {2000, 5000, 8000}) {
+    const int at = p + latency;
+    assert(std::fabs(l[static_cast<size_t>(at)] -
+                     clean[static_cast<size_t>(p)]) < 0.06f);
+  }
+
+  // A clean sine must not be treated as clicks.
+  repair::Declick cleanDeclick;
+  cleanDeclick.prepare(kSr);
+  cleanDeclick.setControls(c);
+  std::vector<float> cl = clean;
+  std::vector<float> cr = clean;
+  cleanDeclick.process(cl.data(), cr.data(), n);
+  assert(cleanDeclick.clickCount() == 0);
+  const int at = latency + 2000;
+  assert(std::fabs(cl[static_cast<size_t>(at)] -
+                   clean[static_cast<size_t>(at - latency)]) < 1.0e-5f);
 }
 
 void testPresets() {
@@ -225,6 +271,7 @@ int main() {
   testCaptureOverlay();
   testEngine();
   testDeclip();
+  testDeclick();
   testPresets();
   std::printf("DSP tests passed\n");
   return 0;

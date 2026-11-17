@@ -17,13 +17,15 @@ Suite, Vocal Suite and Space Suite.
 - 48 host parameters covering the planned modules.
 - 1200×760 Cairo/Jost panel with seven pages: CLIP, CLICK, HUM, NOISE, VERB,
   SPEC, OUT. Controls are wired to parameters.
-- **De-Clip** is the first real DSP module: flat-top detection, cubic, balanced
-  and clipping-consistent iterative STFT reconstruction, auto/manual
-  thresholds, mix and output headroom.
+- **De-Clip** — flat-top detection, cubic, balanced and clipping-consistent
+  iterative STFT reconstruction, auto/manual thresholds, mix and output
+  headroom.
+- **De-Click** — median-residual click/crackle detection, stereo-linked repair
+  by cubic Hermite interpolation, sensitivity/width/mix controls.
 - Shared real-time STFT: 2048-sample frames, 75% overlap, identity
   reconstruction is unit-tested.
-- Total reported latency is 3582 samples (~74.6 ms at 48 kHz): 1535 for
-  De-Clip plus 2047 for the shared STFT.
+- Total reported latency is 4221 samples (~87.9 ms at 48 kHz): 1535 for
+  De-Clip, 639 for De-Click and 2047 for the shared STFT.
 - Spectral capture prototype: rolling buffer with host-time stamps,
   timeline-anchored edit overlays and crossfades. Unit-tested; not yet wired to
   a spectral editor UI.
@@ -31,7 +33,7 @@ Suite, Vocal Suite and Space Suite.
 
 ## Not implemented yet
 
-- De-Click, De-Hum, De-Noise and De-Reverb DSP.
+- De-Hum, De-Noise and De-Reverb DSP.
 - The spectral editor (capture/select/interpolate UI) and state serialisation.
 - Preset browser UI (the preset table and LV2 preset export already exist).
 - Loudness/latency status polish.

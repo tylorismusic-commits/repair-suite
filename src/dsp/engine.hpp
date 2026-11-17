@@ -15,6 +15,7 @@
 
 #include "controls.hpp"
 #include "declip.hpp"
+#include "declick.hpp"
 #include "spectral_capture.hpp"
 #include "stft.hpp"
 
@@ -25,6 +26,7 @@ public:
   void prepare(float sampleRate, int /*maxBlock*/ = 0) noexcept {
     sr_ = sampleRate > 0.0f ? sampleRate : 48000.0f;
     declip_.prepare(sr_);
+    declick_.prepare(sr_);
     stft_.prepare(sr_, 2048, 512);
     capture_.prepare(sr_, 30.0f);
     inputGain_.setTime(15.0f, sr_);
@@ -41,6 +43,7 @@ public:
     inputGain_.setTarget(hdsp::dbToGain(c.inputDb));
     outputGain_.setTarget(hdsp::dbToGain(c.outputDb));
     declip_.setControls(c);
+    declick_.setControls(c);
     capture_.setArmed(c.captureArm);
     if (c.captureFreeze) {
       capture_.freeze();
@@ -48,6 +51,7 @@ public:
     if (c.clearCapture) {
       capture_.reset();
       declip_.setControls(c);
+    declick_.setControls(c);
     capture_.setArmed(c.captureArm);
     }
     if (c.clearEdits) {
@@ -62,6 +66,7 @@ public:
 
   void reset() noexcept {
     declip_.reset();
+    declick_.reset();
     stft_.reset();
     capture_.reset();
     inputGain_.reset(1.0f);
@@ -69,7 +74,9 @@ public:
   }
 
   uint32_t latencySamples() const noexcept {
-    return static_cast<uint32_t>(stft_.latencySamples() + declip_.latencySamples());
+    return static_cast<uint32_t>(stft_.latencySamples() +
+                                 declip_.latencySamples() +
+                                 declick_.latencySamples());
   }
 
   void process(float* left, float* right, int frames, Meters& meters,
@@ -94,6 +101,9 @@ public:
     // De-Clip runs first, directly on the input, before any filtering.  It
     // always runs, even when bypassed, so the reported latency stays exact.
     declip_.process(left, right, frames);
+
+    // De-Click runs next, before hum and broadband cleanup.
+    declick_.process(left, right, frames);
 
     // Capture is a Phase 0 placeholder at the input tap.  The production tap
     // is after De-Reverb, before Output trim.
@@ -139,6 +149,7 @@ private:
   bool captureArmed_ = false;
   bool noiseLearn_ = false;
   Declip declip_;
+  Declick declick_;
   Stft stft_;
   SpectralCapture capture_;
   hdsp::Smoothed inputGain_;
