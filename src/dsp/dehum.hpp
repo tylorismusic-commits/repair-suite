@@ -68,10 +68,11 @@ public:
     }
     harmonics_ = std::clamp(c.humHarmonics, 1, kMaxHarmonics);
     oddOnly_ = c.humOdd;
+    mask_ = c.humMask;
     const float target = c.humAuto ? autoHz_ : c.humHz;
     if (std::fabs(target - currentHz_) > 0.01f ||
         harmonics_ != activeHarmonics_ || c.humOdd != activeOdd_ ||
-        c.humPrecision != precision_) {
+        c.humPrecision != precision_ || mask_ != activeMask_) {
       precision_ = c.humPrecision;
       rebuild();
     }
@@ -186,6 +187,9 @@ private:
       if (oddOnly_ && (k % 2) == 0) {
         continue;
       }
+      if (k <= 64 && ((mask_ >> (k - 1)) & 1ull) == 0) {
+        continue;
+      }
       const float f = currentHz_ * static_cast<float>(k);
       if (f >= nyquist) {
         break;
@@ -199,6 +203,7 @@ private:
       ++activeHarmonics_;
     }
     activeOdd_ = oddOnly_;
+    activeMask_ = mask_;
   }
 
   void updateAuto() noexcept {
@@ -272,6 +277,8 @@ private:
   int harmonics_ = 12;
   int activeHarmonics_ = 0;
   bool oddOnly_ = false;
+  uint64_t mask_ = ~static_cast<uint64_t>(0);
+  uint64_t activeMask_ = 0;
   bool activeOdd_ = false;
   bool precision_ = false;
   bool autoActive_ = false;

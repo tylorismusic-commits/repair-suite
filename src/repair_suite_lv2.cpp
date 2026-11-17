@@ -320,6 +320,16 @@ void run(LV2_Handle handle, uint32_t frames) {
                                std::memory_order_relaxed);
   p->shared.clickEvents.store(p->meters.clickEvents,
                               std::memory_order_relaxed);
+  p->shared.clickEventCount.store(p->meters.clickEventCount,
+                                std::memory_order_relaxed);
+  for (int ei = 0; ei < std::min(p->meters.clickEventCount, 8); ++ei) {
+    p->shared.clickEventTime[ei].store(p->meters.clickEventList[ei].timeSec,
+                                   std::memory_order_relaxed);
+    p->shared.clickEventWidth[ei].store(p->meters.clickEventList[ei].widthMs,
+                                    std::memory_order_relaxed);
+    p->shared.clickEventPeak[ei].store(p->meters.clickEventList[ei].peakDb,
+                                   std::memory_order_relaxed);
+  }
   p->shared.humDetectedHz.store(p->meters.humDetectedHz,
                                 std::memory_order_relaxed);
   if (p->compGr) *p->compGr = p->meters.grDb;

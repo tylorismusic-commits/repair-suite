@@ -56,7 +56,18 @@ struct PanelState {
   bool diffMode = false;
   bool previewMode = false;
   bool timelineStale = false;
+  double specGamma = 1.25;
+  float specRangeDb = 60.0f;
+  bool historyOpen = false;
+  std::vector<std::string> historyNames;
+  int clipHist[64] = {};
+  float clipRestoredPeakDb = 0.0f;
+  bool analysisApply[6] = {true, true, true, true, true, true};
+  int modulePreset[7] = {0, 0, 0, 0, 0, 0, 0};
   static constexpr int kHistory = 240;
+  static constexpr int kDoubleClickMs = 400;
+  static constexpr double kEditW = 170.0;
+  static constexpr double kEditH = 40.0;
   float inHistory[kHistory] = {};
   int inHistoryHead = 0;
   float outHistory[kHistory] = {};
@@ -129,10 +140,25 @@ private:
                      const PanelState& state) const;
   void drawSpectralPage(cairo_t* cr, const Shared& shared,
                         const PanelState& state) const;
-  void drawAnalysis(cairo_t* cr, const Shared& shared) const;
+  void drawAnalysis(cairo_t* cr, const Shared& shared,
+                    const PanelState& state) const;
+  void drawMonitorStrip(cairo_t* cr, const Shared& shared,
+                        const PanelState& state) const;
+  bool monitorHit(double x, double y, int* index) const;
+  bool clipHistogramHit(const Shared& shared, double x, double y,
+                        int* which) const;
+  bool humTableHit(const PanelState& state, double x, double y, int* harmonic) const;
+  void drawSpectralHistory(cairo_t* cr, const Shared& shared,
+                           const PanelState& state) const;
+  void restoreHistory(Shared& shared, PanelState& state, int index);
+  void applyModulePreset(Shared& shared, PanelState& state, int page);
+  void resetModule(Shared& shared, PanelState& state, int page);
+  void beginTextEntry(Shared& shared, PanelState& state, double x, double y);
+  bool textKey(Shared& shared, PanelState& state, int key, const char* text);
+  bool commitTextEntry(Shared& shared, PanelState& state);
   void drawStageVisual(cairo_t* cr, const Shared& shared,
                        const PanelState& state, int page) const;
-  void applyAnalysis(Shared& shared);
+  void applyAnalysis(Shared& shared, const PanelState& state);
   void loadCapture(Shared& shared, PanelState& state);
   void buildSpectrogram(PanelState& state);
   void buildMagnitude(const std::vector<float>& left,
@@ -142,7 +168,7 @@ private:
   bool plotHit(double x, double y) const;
   void selectionTimes(const PanelState& state, double* t0, double* t1,
                       double* f0, double* f1) const;
-  void pushUndo(Shared& shared);
+  void pushUndo(Shared& shared, const char* name = "Edit");
   void undo(Shared& shared, PanelState& state);
   void redo(Shared& shared, PanelState& state);
   void setPreview(Shared& shared, PanelState& state);
@@ -155,6 +181,7 @@ private:
   void fillSelectionMask(PanelState& state);
   void paintBrush(PanelState& state, double x, double y);
   void selectLasso(PanelState& state);
+  void selectHarmonics(Shared& shared, PanelState& state);
   void updateSelectionBoundsFromMask(PanelState& state);
   void text(cairo_t* cr, const char* s, double x, double y, double size,
             int align, double r, double g, double b) const;
@@ -173,8 +200,15 @@ private:
   double dragStartY_ = 0.0;
   double dragStartValue_ = 0.0;
   bool editing_ = false;
+  uint32_t editParam_ = 0;
   double editBoxX_ = 0.0;
   double editBoxY_ = 0.0;
+  int lastClickParam_ = -1;
+  double lastClickTime_ = 0.0;
+  int clipDrag_ = 0;  // 1 upper threshold, 2 lower threshold
+  int hoverParam_ = -1;
+  double hoverX_ = 0.0;
+  double hoverY_ = 0.0;
   std::vector<float> captureL_;
   std::vector<float> captureR_;
   double captureStart_ = 0.0;
@@ -188,6 +222,8 @@ private:
   std::vector<std::pair<double, double>> lassoPoints_;
   std::vector<std::vector<SpectralEdit>> undoStack_;
   std::vector<std::vector<SpectralEdit>> redoStack_;
+  std::vector<std::string> undoNames_;
+  std::vector<std::string> redoNames_;
   std::vector<float> editedL_;
   std::vector<float> editedR_;
   std::vector<uint32_t> diffPixels_;

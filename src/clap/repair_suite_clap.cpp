@@ -989,6 +989,16 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
                                std::memory_order_relaxed);
   s->shared.clickEvents.store(s->meters.clickEvents,
                               std::memory_order_relaxed);
+  s->shared.clickEventCount.store(s->meters.clickEventCount,
+                                std::memory_order_relaxed);
+  for (int ei = 0; ei < std::min(s->meters.clickEventCount, 8); ++ei) {
+    s->shared.clickEventTime[ei].store(s->meters.clickEventList[ei].timeSec,
+                                   std::memory_order_relaxed);
+    s->shared.clickEventWidth[ei].store(s->meters.clickEventList[ei].widthMs,
+                                    std::memory_order_relaxed);
+    s->shared.clickEventPeak[ei].store(s->meters.clickEventList[ei].peakDb,
+                                   std::memory_order_relaxed);
+  }
   s->shared.humDetectedHz.store(s->meters.humDetectedHz,
                                 std::memory_order_relaxed);
   s->shared.latencySamples.store(s->engine.latencySamples(),

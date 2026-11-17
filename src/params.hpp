@@ -83,6 +83,10 @@ enum ParamId : uint32_t {
   P_SPEC_PRESERVE,
   P_SPEC_MIX,
 
+  // Workflow / monitoring (appended so saved sessions stay compatible)
+  P_MONITOR,
+  P_AUDITION,
+
   P_COUNT
 };
 
@@ -124,6 +128,10 @@ inline constexpr const char* kNoiseFrameLabels[] = {"512", "1024", "2048",
 inline constexpr const char* kSpectralOpLabels[] = {"Attenuate", "Erase",
                                                     "Interpolate", "Patch",
                                                     "Repair", "Amplify"};
+inline constexpr const char* kMonitorLabels[] = {"Output", "Input", "Delta"};
+inline constexpr const char* kAuditionLabels[] = {"Off", "De-Clip", "De-Click",
+                                                  "De-Hum", "De-Noise",
+                                                  "De-Reverb", "Spectral"};
 
 inline constexpr ParamSpec kParamSpecs[P_COUNT] = {
     // Global
@@ -235,6 +243,12 @@ inline constexpr ParamSpec kParamSpecs[P_COUNT] = {
      true, nullptr, {}, 0.0, 1.0},
     {"spec_mix", "Mix", "Spectral", 0.0, 100.0, 100.0, false, false, false,
      "%", {}, 80.0, 100.0},
+
+    // Workflow / monitoring
+    {"monitor", "Monitor", "Global", 0.0, 2.0, 0.0, true, false, false, nullptr,
+     labels(kMonitorLabels), 0.0, 2.0},
+    {"audition", "Audition", "Global", 0.0, 6.0, 0.0, true, false, false,
+     nullptr, labels(kAuditionLabels), 0.0, 6.0},
 };
 
 static_assert(sizeof(kParamSpecs) / sizeof(kParamSpecs[0]) == P_COUNT,
@@ -292,6 +306,13 @@ public:
     clickEvents.store(0, std::memory_order_relaxed);
     humDetectedHz.store(0.0f, std::memory_order_relaxed);
     latencySamples.store(4221, std::memory_order_relaxed);
+    humMask.store(~static_cast<uint64_t>(0), std::memory_order_relaxed);
+    clickEventCount.store(0, std::memory_order_relaxed);
+    for (int i = 0; i < kClickEventSlots; ++i) {
+      clickEventTime[i].store(0.0f, std::memory_order_relaxed);
+      clickEventWidth[i].store(0.0f, std::memory_order_relaxed);
+      clickEventPeak[i].store(-120.0f, std::memory_order_relaxed);
+    }
     for (int i = 0; i < kProfileBins; ++i) {
       noiseProfile[i].store(0.0f);
     }
@@ -310,8 +331,38 @@ public:
     if (s.stepped) {
       v = static_cast<double>(static_cast<int>(v + (v >= 0 ? 0.5 : -0.5)));
     }
+    const double old = values_[p].load(std::memory_order_relaxed);
+    if (std::fabs(old - v) > 1.0e-9) {
+      pushParamUndo(p, old);
+    }
     values_[p].store(v, std::memory_order_relaxed);
     dirty_[p].store(true, std::memory_order_release);
+  }
+
+  bool undoParameter() noexcept {
+    if (undoCount_ == 0) {
+      return false;
+    }
+    --undoCount_;
+    const ParamChange c = undo_[undoCount_];
+    redo_[redoCount_ % kParamHistory] = c;
+    ++redoCount_;
+    values_[c.param].store(c.value, std::memory_order_relaxed);
+    dirty_[c.param].store(true, std::memory_order_release);
+    return true;
+  }
+
+  bool redoParameter() noexcept {
+    if (redoCount_ == 0) {
+      return false;
+    }
+    --redoCount_;
+    const ParamChange c = redo_[redoCount_ % kParamHistory];
+    undo_[undoCount_ % kParamHistory] = c;
+    ++undoCount_;
+    values_[c.param].store(c.value, std::memory_order_relaxed);
+    dirty_[c.param].store(true, std::memory_order_release);
+    return true;
   }
 
   void setFromHost(uint32_t p, double v) noexcept {
@@ -412,12 +463,37 @@ public:
   std::atomic<int> clickEvents;
   std::atomic<float> humDetectedHz;
   std::atomic<uint32_t> latencySamples;
+  std::atomic<uint64_t> humMask;  // UI-only per-harmonic enable bits
+  static constexpr int kClickEventSlots = 8;
+  std::atomic<int> clickEventCount;
+  std::atomic<float> clickEventTime[kClickEventSlots];
+  std::atomic<float> clickEventWidth[kClickEventSlots];
+  std::atomic<float> clickEventPeak[kClickEventSlots];
   std::atomic<float> bpm;      // reserved for later tempo-synced capture
   std::atomic<bool> hostTempo;
 
 private:
+  struct ParamChange {
+    uint32_t param = 0;
+    double value = 0.0;
+  };
+  static constexpr int kParamHistory = 128;
+
+  void pushParamUndo(uint32_t p, double oldValue) noexcept {
+    undo_[undoCount_ % kParamHistory] = ParamChange{p, oldValue};
+    ++undoCount_;
+    if (undoCount_ > kParamHistory) {
+      undoCount_ = kParamHistory;
+    }
+    redoCount_ = 0;
+  }
+
   std::atomic<double> values_[P_COUNT];
   std::atomic<bool> dirty_[P_COUNT];
+  ParamChange undo_[kParamHistory];
+  ParamChange redo_[kParamHistory];
+  int undoCount_ = 0;
+  int redoCount_ = 0;
 };
 
 inline Controls controlsFrom(const Shared& s) noexcept {
@@ -476,6 +552,11 @@ inline Controls controlsFrom(const Shared& s) noexcept {
   c.specAmountDb = static_cast<float>(s.get(P_SPEC_AMOUNT));
   c.specPreserve = s.get(P_SPEC_PRESERVE) > 0.5;
   c.specMix = static_cast<float>(s.get(P_SPEC_MIX));
+
+  c.monitor = static_cast<int>(s.get(P_MONITOR) + 0.5);
+  c.delta = c.delta || c.monitor == 2;
+  c.audition = static_cast<int>(s.get(P_AUDITION) + 0.5) - 1;
+  c.humMask = s.humMask.load(std::memory_order_relaxed);
 
   c.captureArm = s.captureActive.load(std::memory_order_relaxed);
   c.analyze = s.analyzeRequest.load(std::memory_order_relaxed);

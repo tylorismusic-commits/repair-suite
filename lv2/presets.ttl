@@ -98,7 +98,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_78_Transfer> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -152,7 +154,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Dialogue_Hum> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -206,7 +210,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Podcast_Hiss> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -260,7 +266,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Clip_Rescue> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -314,7 +322,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Room_Tamer> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -368,7 +378,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Clip_Noise> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -422,7 +434,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Low_Latency> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -476,7 +490,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Vinyl_Warm> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -530,7 +546,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Vinyl_Heavy> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -584,7 +602,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_78_Vocal> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -638,7 +658,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Shellac_Transfer> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -692,7 +714,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Dialogue_Dry> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -746,7 +770,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_ADR_Room> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -800,7 +826,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Interview_Cleanup> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -854,7 +882,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Podcast_Clicks> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -908,7 +938,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Drum_Room> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -962,7 +994,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Snare_Crackle> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -1016,7 +1050,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Bass_DI_Hum> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -1070,7 +1106,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Guitar_Buzz> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -1124,7 +1162,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Mix_Bus_Noise> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -1178,7 +1218,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Archive_Transfer> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -1232,7 +1274,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Clip_Soft> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -1286,7 +1330,9 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .
 
 <https://github.com/tylorismusic-commits/repair-suite#preset_Safe_Start> a pset:Preset ;
   lv2:appliesTo <https://github.com/tylorismusic-commits/repair-suite> ;
@@ -1340,4 +1386,6 @@ idpy:queue_draw a lv2:Feature .
   lv2:port [ lv2:symbol "spec_op" ; pset:value 2 ] ;
   lv2:port [ lv2:symbol "spec_amount" ; pset:value 24 ] ;
   lv2:port [ lv2:symbol "spec_preserve" ; pset:value 1 ] ;
-  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] .
+  lv2:port [ lv2:symbol "spec_mix" ; pset:value 100 ] ;
+  lv2:port [ lv2:symbol "monitor" ; pset:value 0 ] ;
+  lv2:port [ lv2:symbol "audition" ; pset:value 0 ] .

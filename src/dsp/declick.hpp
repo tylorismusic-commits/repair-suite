@@ -18,6 +18,12 @@ namespace repair {
 
 class Declick {
 public:
+  struct Event {
+    int offsetSamples = 0;  // relative to the start of the output block
+    float widthMs = 0.0f;
+    float peakDb = -120.0f;
+  };
+
   static constexpr int kBlock = 512;
   static constexpr int kContext = 128;
   static constexpr int kWindow = kBlock + 2 * kContext;  // 768
@@ -59,6 +65,7 @@ public:
     outCount_ = 0;
     clicks_ = 0;
     totalClicks_ = 0;
+    events_.clear();
   }
 
   void setControls(const Controls& c) noexcept {
@@ -74,6 +81,7 @@ public:
   int latencySamples() const noexcept { return kBlock + kContext - 1; }
   int clickCount() const noexcept { return totalClicks_; }
   int lastClicks() const noexcept { return clicks_; }
+  const std::vector<Event>& lastEvents() const noexcept { return events_; }
 
   void process(float* left, float* right, int frames) noexcept {
     if (!left || !right || frames <= 0) {
@@ -133,6 +141,7 @@ private:
     workL_ = origL_;
     workR_ = origR_;
     clicks_ = 0;
+    events_.clear();
     std::fill(maskL_.begin(), maskL_.end(), 0);
     std::fill(maskR_.begin(), maskR_.end(), 0);
 
@@ -154,15 +163,18 @@ private:
         for (const Run& r : runsC_) {
           reconstruct(workL_, origL_, r);
           reconstruct(workR_, origR_, r);
+          recordEvent(r, &origL_, &origR_);
         }
         clicks_ = static_cast<int>(runsC_.size());
         totalClicks_ += clicks_;
       } else {
         for (const Run& r : runsL_) {
           reconstruct(workL_, origL_, r);
+          recordEvent(r, &origL_, nullptr);
         }
         for (const Run& r : runsR_) {
           reconstruct(workR_, origR_, r);
+          recordEvent(r, nullptr, &origR_);
         }
         clicks_ = static_cast<int>(runsL_.size() + runsR_.size());
         totalClicks_ += clicks_;
@@ -178,6 +190,27 @@ private:
       outWrite_ = (outWrite_ + 1) % static_cast<int>(outL_.size());
       outCount_ = std::min(outCount_ + 1, static_cast<int>(outL_.size()));
     }
+  }
+
+  void recordEvent(const Run& r, const std::vector<float>* l,
+                   const std::vector<float>* right) noexcept {
+    if (events_.size() >= 8) {
+      return;
+    }
+    float peak = 0.0f;
+    for (int i = r.a; i <= r.b; ++i) {
+      if (l) {
+        peak = std::max(peak, std::fabs((*l)[static_cast<size_t>(i)]));
+      }
+      if (right) {
+        peak = std::max(peak, std::fabs((*right)[static_cast<size_t>(i)]));
+      }
+    }
+    Event e;
+    e.offsetSamples = r.a - kContext;
+    e.widthMs = static_cast<float>(r.b - r.a + 1) * 1000.0f / sr_;
+    e.peakDb = 20.0f * std::log10(std::max(1.0e-6f, peak));
+    events_.push_back(e);
   }
 
   void detect(const std::vector<float>& x, std::vector<float>& residual,
@@ -380,6 +413,7 @@ private:
   std::vector<float> resL_, resR_, absRes_, sorted_, lpBuf_;
   std::vector<uint8_t> maskL_, maskR_, maskC_;
   std::vector<Run> runsL_, runsR_, runsC_;
+  std::vector<Event> events_;
   std::vector<float> histL_, histR_, outL_, outR_;
   int histWrite_ = 0;
   uint64_t samplesSeen_ = 0;

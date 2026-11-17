@@ -240,6 +240,143 @@ int main() {
     cairo_surface_destroy(as);
   }
 
+
+  {
+    // Workflow controls: monitor, typed entry, double-click reset, module
+    // preset/reset, histogram drag and harmonic-table toggles.
+    Shared w;
+    PanelState ws;
+    Panel wp;
+    wp.loadFont("./assets/fonts");
+    cairo_surface_t* wsurf =
+        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, kPanelWidth,
+                                   kPanelHeight);
+    cairo_t* wcr = cairo_create(wsurf);
+    ws.tab = 0;
+    wp.draw(wcr, w, ws);
+
+    // Persistent monitor strip: Input segment.
+    wp.pointerDown(w, ws, 56 + 66 + 88 + 20, 134, false);
+    wp.pointerUp(w, ws);
+    assert(w.get(P_MONITOR) == 1.0);
+
+    // Drag the upper clip threshold handle.
+    w.set(P_CLIP_UPPER, -12.0);
+    const double thresholdY = 420 + 190 - 18 - ((-12.0 + 60.0) / 60.0) * 142.0;
+    const double oldUpper = w.get(P_CLIP_UPPER);
+    wp.pointerDown(w, ws, 200, thresholdY, false);
+    wp.pointerMove(w, ws, 200, thresholdY - 20, false);
+    wp.pointerUp(w, ws);
+    assert(w.get(P_CLIP_UPPER) > oldUpper);
+
+    // Module preset and reset buttons.
+    const double oldIter = w.get(P_CLIP_ITER);
+    wp.pointerDown(w, ws, 1040, 180, false);
+    wp.pointerUp(w, ws);
+    assert(ws.modulePreset[0] == 1);
+    wp.pointerDown(w, ws, 940, 180, false);
+    wp.pointerUp(w, ws);
+    assert(std::fabs(w.get(P_CLIP_ITER) - kParamSpecs[P_CLIP_ITER].def) <
+           1.0e-6);
+    (void)oldIter;
+
+    // Right-click typed entry and double-click reset.
+    ws.tab = 6;
+    wp.draw(wcr, w, ws);
+    w.set(P_INPUT, 0.0);
+    wp.contextDown(w, ws, 210, 350);
+    const char negative[] = "-6";
+    for (const char* c = negative; *c; ++c) {
+      const char one[2] = {*c, 0};
+      wp.keyEvent(w, ws, 0, one);
+    }
+    wp.keyEvent(w, ws, 13, nullptr);
+    assert(std::fabs(w.get(P_INPUT) + 6.0) < 1.0e-6);
+
+    w.set(P_INPUT, 3.0);
+    wp.pointerDown(w, ws, 210, 350, false);
+    wp.pointerUp(w, ws);
+    wp.pointerDown(w, ws, 210, 350, false);
+    wp.pointerUp(w, ws);
+    std::printf("double reset input %.3f def %.3f\n", w.get(P_INPUT),
+                kParamSpecs[P_INPUT].def);
+    assert(std::fabs(w.get(P_INPUT) - kParamSpecs[P_INPUT].def) < 1.0e-6);
+
+    // Analyze review row checkbox toggles independently of APPLY.
+    ws.tab = 6;
+    wp.draw(wcr, w, ws);
+    const bool beforeApply = ws.analysisApply[0];
+    wp.pointerDown(w, ws, 148, 256.0, false);
+    wp.pointerUp(w, ws);
+    assert(ws.analysisApply[0] == !beforeApply);
+
+    // Hum table row toggles a harmonic bit.
+    ws.tab = 2;
+    wp.draw(wcr, w, ws);
+    const uint64_t beforeMask = w.humMask.load();
+    wp.pointerDown(w, ws, 360, 464, false);
+    wp.pointerUp(w, ws);
+    assert(w.humMask.load() != beforeMask);
+
+    cairo_destroy(wcr);
+    cairo_surface_destroy(wsurf);
+  }
+
+  {
+    // Spectral harmonic selection and named history.
+    Shared h;
+    SpectralCapture cap;
+    cap.prepare(48000.0f, 1.0f);
+    cap.setArmed(true);
+    std::vector<float> l(48000), r(48000);
+    for (int i = 0; i < 48000; ++i) {
+      l[static_cast<size_t>(i)] = r[static_cast<size_t>(i)] =
+          0.2f * std::sin(2.0 * 3.141592653589793 * 220.0 * i / 48000.0);
+    }
+    cap.push(l.data(), r.data(), 48000, 0.0, true);
+    cap.requestFreeze();
+    std::vector<float> zeros(512, 0.0f);
+    cap.push(zeros.data(), zeros.data(), 512, 1.2, true);
+    h.spectralBridge.store(&cap);
+    h.sampleRate.store(48000.0f);
+    h.set(P_HUM_FREQ, 50.0);
+    h.set(P_HUM_HARMONICS, 8);
+    Panel sp;
+    sp.loadFont("./assets/fonts");
+    PanelState ss;
+    ss.tab = 5;
+    cairo_surface_t* hs =
+        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, kPanelWidth,
+                                   kPanelHeight);
+    cairo_t* hc = cairo_create(hs);
+    sp.tick(h, ss);
+    sp.draw(hc, h, ss);
+    sp.pointerDown(h, ss, 92, 650, false);
+    sp.pointerUp(h, ss);
+    assert(ss.specTool == 3);
+    sp.pointerDown(h, ss, 120, 250, false);
+    sp.pointerMove(h, ss, 360, 250, false);
+    sp.pointerUp(h, ss);
+    assert(ss.hasSelection);
+    int selected = 0;
+    for (uint8_t v : ss.specMask) {
+      selected += v ? 1 : 0;
+    }
+    assert(selected > 0);
+    h.set(P_SPEC_OP, 0.0);
+    sp.pointerDown(h, ss, 865, 303, false);
+    sp.pointerUp(h, ss);
+    assert(cap.editCount() == 1);
+    sp.draw(hc, h, ss);
+    const bool hb = sp.pointerDown(h, ss, 190, 650, false);
+    sp.pointerUp(h, ss);
+    std::printf("history click %d open %d\n", hb ? 1 : 0,
+                ss.historyOpen ? 1 : 0);
+    assert(ss.historyOpen);
+    cairo_destroy(hc);
+    cairo_surface_destroy(hs);
+  }
+
   std::printf("panel tests passed\n");
   return 0;
 }

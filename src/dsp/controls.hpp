@@ -2,13 +2,24 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <cstdint>
+
 namespace repair {
+
+// A detected De-Click event, used by the reviewer/event list.
+struct ClickEvent {
+  float timeSec = 0.0f;
+  float widthMs = 0.0f;
+  float peakDb = -120.0f;
+};
 
 // Physical units, matching the parameter table.  The engine consumes these
 // directly; the UI and host parameter text share the same units.
 struct Controls {
   bool power = true;
   bool delta = false;
+  int monitor = 0;        // 0 Output, 1 Input, 2 Delta
+  int audition = -1;      // -1 Off, 0..5 stage solo, 6 spectral
   float inputDb = 0.0f;
   float outputDb = 0.0f;
   bool dcOn = false;
@@ -38,6 +49,7 @@ struct Controls {
   float humDepthDb = 30.0f;
   bool humPrecision = false;
   float humMix = 100.0f;
+  uint64_t humMask = ~static_cast<uint64_t>(0);
 
   bool noiseOn = true;
   bool noiseAdaptive = false;
@@ -100,6 +112,8 @@ struct Meters {
   float clipActivity = 0.0f;
   int clickEvents = 0;
   float humDetectedHz = 0.0f;
+  int clickEventCount = 0;
+  ClickEvent clickEventList[8];
 };
 
 } // namespace repair

@@ -12,6 +12,7 @@
 #include FT_FREETYPE_H
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +36,14 @@ constexpr double kPresetH = 36.0;
 constexpr double kListY = 56.0;
 constexpr double kListRow = 22.0;
 constexpr double kListVisible = 14.0;
+constexpr double kMonX = 56.0;
+constexpr double kMonY = 122.0;
+constexpr double kMonH = 28.0;
+constexpr double kMonSegW = 88.0;
+constexpr double kMonABX = kMonX + 3 * kMonSegW + 14.0;
+constexpr double kMonABW = 58.0;
+constexpr double kAnalysisRowY = 252.0;
+constexpr double kAnalysisRowH = 30.0;
 
 struct Rgb {
   double r, g, b;
@@ -73,6 +82,153 @@ void roundRect(cairo_t* cr, double x, double y, double w, double h, double r) {
   cairo_arc(cr, x + r, y + h - r, r, kPiD / 2, kPiD);
   cairo_arc(cr, x + r, y + r, r, kPiD, 3 * kPiD / 2);
   cairo_close_path(cr);
+}
+
+double nowMs() {
+  return std::chrono::duration<double, std::milli>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+std::string lowerText(std::string s) {
+  for (char& c : s) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return s;
+}
+
+std::string trimText(std::string s) {
+  const auto notSpace = [](unsigned char c) { return !std::isspace(c); };
+  s.erase(s.begin(), std::find_if(s.begin(), s.end(), notSpace));
+  s.erase(std::find_if(s.rbegin(), s.rend(), notSpace).base(), s.end());
+  return s;
+}
+
+bool parseParamValue(const ParamSpec& spec, const std::string& raw,
+                     double* out) {
+  if (!out) {
+    return false;
+  }
+  const std::string text = lowerText(trimText(raw));
+  if (text.empty()) {
+    return false;
+  }
+  if (spec.labels.names) {
+    for (int i = 0; i < spec.labels.count; ++i) {
+      if (text == lowerText(spec.labels.names[i])) {
+        *out = spec.min + i;
+        return true;
+      }
+    }
+  }
+  if (text == "on" || text == "true" || text == "yes") {
+    *out = 1.0;
+    return true;
+  }
+  if (text == "off" || text == "false" || text == "no") {
+    *out = 0.0;
+    return true;
+  }
+  char* end = nullptr;
+  const double value = std::strtod(text.c_str(), &end);
+  if (end == text.c_str()) {
+    return false;
+  }
+  const std::string suffix = trimText(std::string(end));
+  double v = value;
+  if (suffix == "khz" || suffix == "k") {
+    v *= 1000.0;
+  } else if (suffix == "ms") {
+    v = value;
+  } else if (suffix == "s" || suffix == "sec") {
+    v = value;
+  } else if (suffix == "db" || suffix == "hz" || suffix == "%") {
+    v = value;
+  } else if (!suffix.empty()) {
+    return false;
+  }
+  if (spec.stepped) {
+    v = std::round(v);
+  }
+  *out = v;
+  return true;
+}
+
+double presetResetValue(const PanelState& state, uint32_t param) {
+  double value = kParamSpecs[param].def;
+  if (state.presetIndex >= 0 &&
+      state.presetIndex < static_cast<int>(factoryPresets().size())) {
+    value = factoryPresets()[static_cast<size_t>(state.presetIndex)]
+                .values[param];
+  }
+  return value;
+}
+
+struct ModulePresetValue {
+  uint32_t param = 0;
+  float value = 0.0f;
+};
+
+struct ModulePreset {
+  const char* name = "Init";
+  std::vector<ModulePresetValue> values;
+};
+
+const std::vector<std::vector<ModulePreset>>& modulePresets() {
+  static const std::vector<std::vector<ModulePreset>> presets = {
+      // CLIP
+      {{"Digital", {{P_CLIP_MODE, 0}, {P_CLIP_AUTO, 1}, {P_CLIP_ITER, 12},
+                     {P_CLIP_HEADROOM, 0}, {P_CLIP_MIX, 100}}},
+       {"Vinyl", {{P_CLIP_MODE, 1}, {P_CLIP_AUTO, 0}, {P_CLIP_UPPER, -3},
+                   {P_CLIP_LOWER, -3}, {P_CLIP_ITER, 16},
+                   {P_CLIP_HEADROOM, 2}}},
+       {"Fast", {{P_CLIP_MODE, 2}, {P_CLIP_AUTO, 1}, {P_CLIP_ITER, 8},
+                  {P_CLIP_HEADROOM, 1}}}},
+      // CLICK
+      {{"Vinyl", {{P_CLICK_MODE, 1}, {P_CLICK_SENS, 5}, {P_CLICK_WIDTH, 4},
+                   {P_CLICK_LINK, 1}}},
+       {"Dialogue", {{P_CLICK_MODE, 0}, {P_CLICK_SENS, 4},
+                      {P_CLICK_WIDTH, 2}, {P_CLICK_LINK, 1}}},
+       {"Percussive", {{P_CLICK_MODE, 0}, {P_CLICK_SENS, 6},
+                        {P_CLICK_WIDTH, 1}, {P_CLICK_LINK, 0}}},
+       {"Dropout", {{P_CLICK_MODE, 3}, {P_CLICK_SENS, 5},
+                     {P_CLICK_WIDTH, 3}, {P_CLICK_LINK, 1}}}},
+      // HUM
+      {{"50 Hz", {{P_HUM_AUTO, 0}, {P_HUM_FREQ, 50}, {P_HUM_HARMONICS, 12},
+                   {P_HUM_DEPTH, 30}, {P_HUM_ODD, 0}}},
+       {"60 Hz", {{P_HUM_AUTO, 0}, {P_HUM_FREQ, 60}, {P_HUM_HARMONICS, 12},
+                   {P_HUM_DEPTH, 30}, {P_HUM_ODD, 0}}},
+       {"Wide", {{P_HUM_AUTO, 1}, {P_HUM_HARMONICS, 24}, {P_HUM_DEPTH, 42},
+                  {P_HUM_PRECISION, 1}}},
+       {"Odd Only", {{P_HUM_AUTO, 1}, {P_HUM_HARMONICS, 16}, {P_HUM_ODD, 1},
+                      {P_HUM_DEPTH, 36}}}},
+      // NOISE
+      {{"Hiss", {{P_NOISE_REDUCTION, 12}, {P_NOISE_TONAL, 8},
+                  {P_NOISE_SMOOTH, 5}, {P_NOISE_TRANSIENT, 5}}},
+       {"Room", {{P_NOISE_REDUCTION, 18}, {P_NOISE_TONAL, 12},
+                  {P_NOISE_SMOOTH, 7}, {P_NOISE_TRANSIENT, 6}}},
+       {"Tape", {{P_NOISE_REDUCTION, 8}, {P_NOISE_TONAL, 18},
+                  {P_NOISE_SMOOTH, 4}, {P_NOISE_TRANSIENT, 4}}},
+       {"Adaptive", {{P_NOISE_ADAPTIVE, 1}, {P_NOISE_REDUCTION, 14},
+                      {P_NOISE_SMOOTH, 6}}}},
+      // VERB
+      {{"Room", {{P_VERB_AMOUNT, 6}, {P_VERB_TAIL, 0.6}, {P_VERB_PREDELAY, 25},
+                  {P_VERB_TRANSIENT, 6}}},
+       {"Hall", {{P_VERB_AMOUNT, 10}, {P_VERB_TAIL, 1.4},
+                  {P_VERB_PREDELAY, 40}, {P_VERB_TRANSIENT, 7}}},
+       {"Dialogue", {{P_VERB_AMOUNT, 5}, {P_VERB_TAIL, 0.5},
+                      {P_VERB_PREDELAY, 20}, {P_VERB_TRANSIENT, 8}}}},
+      // SPECTRAL
+      {{"Dialogue", {{P_SPEC_OP, 2}, {P_SPEC_AMOUNT, 24},
+                      {P_SPEC_PRESERVE, 1}}},
+       {"Music", {{P_SPEC_OP, 3}, {P_SPEC_AMOUNT, 18},
+                   {P_SPEC_PRESERVE, 1}}},
+       {"Erase", {{P_SPEC_OP, 1}, {P_SPEC_PRESERVE, 1}}}},
+      // OUT
+      {{"Safe", {{P_INPUT, 0}, {P_OUTPUT, 0}, {P_DC_ON, 0}, {P_DC_FREQ, 20}}},
+       {"Rumble", {{P_DC_ON, 1}, {P_DC_FREQ, 30}, {P_INPUT, 0},
+                    {P_OUTPUT, 0}}}}};
+  return presets;
 }
 
 std::string formatValue(const ParamSpec& s, double value) {
@@ -334,6 +490,8 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
       break;
     case 5:  // SPECTRAL
       addToggle(P_SPEC_ON, 790, 170, 140, 40, "ON");
+      addButton(946, 170, 92, 40, "GAMMA", 24);
+      addButton(1046, 170, 92, 40, "RANGE", 25);
       addButton(790, 228, 150, 42, "CAPTURE", 1);
       addButton(956, 228, 150, 42, "FREEZE", 3);
       addButton(790, 282, 96, 42, "APPLY", 5);
@@ -364,6 +522,8 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
         addButton(bx, by, 60, bh, "DIFF", 17);
         bx += 68;
         addButton(bx, by, 80, bh, "PREVIEW", 18);
+        addButton(56, 636, 88, 34, "HARM", 22);
+        addButton(152, 636, 104, 34, "HISTORY", 23);
       }
       break;
     default:  // OUT
@@ -375,6 +535,17 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
       addButton(460, 160, 130, 40, "ANALYZE", 20);
       addButton(610, 160, 130, 40, "APPLY", 21);
       break;
+  }
+  if (state.tab != 5) {
+    addButton(902, 160, 80, 40, "RESET", 60);
+    addButton(990, 160, 96, 40, "PRESET", 70);
+    static const char* kAuditionLabelsShort[7] = {
+        "DELTA", "DELTA", "SOLO HUM", "RESIDUAL", "SOLO VERB", "DELTA", "DELTA"};
+    addButton(1090, 160, 84, 40, kAuditionLabelsShort[state.tab], 80);
+  } else {
+    addButton(790, 650, 120, 38, "RESET", 60);
+    addButton(918, 650, 120, 38, "PRESET", 70);
+    addButton(1046, 650, 128, 38, "SPECTRAL Δ", 80);
   }
 }
 
@@ -391,6 +562,15 @@ void Panel::tick(Shared& shared, PanelState& state) {
   state.transportValid = shared.transportValid.load(std::memory_order_relaxed);
   state.editCount = shared.editCount.load(std::memory_order_relaxed);
   state.sampleRate = shared.sampleRate.load(std::memory_order_relaxed);
+  for (int& v : state.clipHist) {
+    v = static_cast<int>(static_cast<double>(v) * 0.992);
+  }
+  int clipBin = static_cast<int>(
+      std::clamp((state.inLevelL + 60.0f) / 60.0f, 0.0f, 1.0f) * 63.0f);
+  state.clipHist[clipBin] += 1;
+  const double thr = shared.get(P_CLIP_UPPER);
+  state.clipRestoredPeakDb = static_cast<float>(
+      std::min(0.0, thr + shared.get(P_CLIP_HEADROOM)));
   if (state.transportValid) {
     if (transportSeen_ && state.editCount > 0 &&
         std::fabs(state.transportSeconds - lastTransport_) > 2.0) {
@@ -528,8 +708,9 @@ void Panel::buildSpectrogram(PanelState& state) {
   for (int row = 0; row < kRows; ++row) {
     for (int col = 0; col < kCols; ++col) {
       const float db = specMag_[static_cast<size_t>(row * kCols + col)];
-      float e = std::clamp((db + 70.0f) / 60.0f, 0.0f, 1.0f);
-      e = std::pow(e, 1.25f);
+      const float range = std::max(12.0f, state.specRangeDb);
+      float e = std::clamp((db + range) / range, 0.0f, 1.0f);
+      e = std::pow(e, static_cast<float>(state.specGamma));
       double r = 0.02;
       double g = 0.035;
       double b = 0.055;
@@ -639,7 +820,7 @@ bool Panel::applySpectralEdit(Shared& shared, PanelState& state) {
         outR[static_cast<size_t>(i)] = captureR_[static_cast<size_t>(at)];
       }
     }
-    pushUndo(shared);
+    pushUndo(shared, "Patch");
     lastEditL_ = outL;
     lastEditR_ = outR;
     const double startTime = captureStart_ + static_cast<double>(i0) / sr;
@@ -749,7 +930,7 @@ bool Panel::applySpectralEdit(Shared& shared, PanelState& state) {
     outL[static_cast<size_t>(i)] = accL[static_cast<size_t>(at)];
     outR[static_cast<size_t>(i)] = accR[static_cast<size_t>(at)];
   }
-  pushUndo(shared);
+  pushUndo(shared, kSpectralOpLabels[std::clamp(op, 0, 5)]);
   lastEditL_ = outL;
   lastEditR_ = outR;
   const double startTime = captureStart_ + static_cast<double>(i0) / sr;
@@ -797,7 +978,7 @@ double Panel::timeToX(const PanelState& state, double t) const {
   return kSpecX + (t - start) / std::max(1.0e-9, view) * kSpecW;
 }
 
-void Panel::pushUndo(Shared& shared) {
+void Panel::pushUndo(Shared& shared, const char* name) {
   auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
   if (!bridge) {
     return;
@@ -805,10 +986,15 @@ void Panel::pushUndo(Shared& shared) {
   std::vector<SpectralEdit> current;
   bridge->copyEdits(&current);
   undoStack_.push_back(std::move(current));
+  undoNames_.emplace_back(name ? name : "Edit");
   if (undoStack_.size() > 20) {
     undoStack_.erase(undoStack_.begin());
+    if (!undoNames_.empty()) {
+      undoNames_.erase(undoNames_.begin());
+    }
   }
   redoStack_.clear();
+  redoNames_.clear();
 }
 
 void Panel::undo(Shared& shared, PanelState& state) {
@@ -822,8 +1008,12 @@ void Panel::undo(Shared& shared, PanelState& state) {
   std::vector<SpectralEdit> current;
   bridge->copyEdits(&current);
   redoStack_.push_back(std::move(current));
+  redoNames_.push_back(undoNames_.empty() ? "Edit" : undoNames_.back());
   auto previous = std::move(undoStack_.back());
   undoStack_.pop_back();
+  if (!undoNames_.empty()) {
+    undoNames_.pop_back();
+  }
   bridge->replaceEdits(previous);
   state.editCount = bridge->editCount();
   state.hasSelection = false;
@@ -844,8 +1034,12 @@ void Panel::redo(Shared& shared, PanelState& state) {
   std::vector<SpectralEdit> current;
   bridge->copyEdits(&current);
   undoStack_.push_back(std::move(current));
+  undoNames_.push_back(redoNames_.empty() ? "Edit" : redoNames_.back());
   auto next = std::move(redoStack_.back());
   redoStack_.pop_back();
+  if (!redoNames_.empty()) {
+    redoNames_.pop_back();
+  }
   bridge->replaceEdits(next);
   state.editCount = bridge->editCount();
   state.hasSelection = false;
@@ -1030,7 +1224,7 @@ void Panel::matchEdits(Shared& shared, PanelState& state) {
   if (added.empty()) {
     return;
   }
-  pushUndo(shared);
+  pushUndo(shared, "Match");
   for (const auto& edit : added) {
     bridge->addEdit(edit.startTime, edit.endTime, edit.left.data(),
                     edit.right.data(), static_cast<int>(edit.left.size()));
@@ -1296,57 +1490,98 @@ void Panel::drawStageVisual(cairo_t* cr, const Shared& shared,
     cairo_stroke(cr);
   };
 
-  char label[180];
+  const auto& presets = modulePresets()[static_cast<size_t>(page)];
+  const int presetIdx = std::clamp(
+      state.modulePreset[page], 0, static_cast<int>(presets.size()) - 1);
+  char moduleName[80];
+  std::snprintf(moduleName, sizeof(moduleName), "MODULE: %s",
+                presets[static_cast<size_t>(presetIdx)].name);
+  text(cr, moduleName, x + w - 14, y + 18, 10, 2, kDim.r, kDim.g, kDim.b);
+
+  char label[220];
   if (page == 0) {
-    text(cr, "INPUT ENVELOPE / CLIP THRESHOLD", x + 14, y + 18, 10, 0,
+    text(cr, "CLIP HISTOGRAM / DRAG THRESHOLDS", x + 14, y + 18, 10, 0,
          kDim.r, kDim.g, kDim.b);
-    // Envelope from input peak history.
-    cairo_new_path(cr);
-    for (int i = 0; i < PanelState::kHistory; ++i) {
-      const double px = x + 12 + (w - 24) * i / (PanelState::kHistory - 1);
-      const double t = std::clamp((at(state.inHistory, i) + 60.0) / 60.0, 0.0, 1.0);
-      const double py = y + h - 18 - t * (h - 48);
-      if (i == 0) {
-        cairo_move_to(cr, px, py);
-      } else {
-        cairo_line_to(cr, px, py);
-      }
+    int peakHist = 1;
+    for (int v : state.clipHist) {
+      peakHist = std::max(peakHist, v);
     }
-    setRgb(cr, kAccent, 0.75);
-    cairo_set_line_width(cr, 1.3);
-    cairo_stroke(cr);
-    const double thrDb = shared.get(P_CLIP_UPPER);
-    const double ty = y + h - 18 -
-                      std::clamp((thrDb + 60.0) / 60.0, 0.0, 1.0) * (h - 48);
-    setRgb(cr, kAmber, 0.7);
-    cairo_set_line_width(cr, 1.0);
-    cairo_move_to(cr, x + 12, ty);
-    cairo_line_to(cr, x + w - 12, ty);
-    cairo_stroke(cr);
-    const double activity = state.clipHistory[latest];
-    std::snprintf(label, sizeof(label), "CLIP ACTIVITY %s",
-                  activity > 0.5f ? "DETECTED" : "CLEAR");
-    text(cr, label, x + 14, y + h - 6, 10, 0,
-         activity > 0.5f ? kAmber.r : kDim.r,
-         activity > 0.5f ? kAmber.g : kDim.g,
-         activity > 0.5f ? kAmber.b : kDim.b);
+    const double plotTop = y + 34;
+    const double plotBottom = y + h - 30;
+    for (int i = 0; i < 64; ++i) {
+      const double bx = x + 14 + (w - 28) * i / 64.0;
+      const double bh = (plotBottom - plotTop) *
+                        static_cast<double>(state.clipHist[i]) / peakHist;
+      setRgb(cr, i >= 48 ? kAmber : kAccent,
+             i >= 48 ? 0.55 : 0.42);
+      cairo_rectangle(cr, bx, plotBottom - bh, (w - 28) / 64.0 - 1.0,
+                      std::max(0.5, bh));
+      cairo_fill(cr);
+    }
+    auto thresholdY = [&](double db) {
+      return plotBottom -
+             std::clamp((db + 60.0) / 60.0, 0.0, 1.0) * (plotBottom - plotTop);
+    };
+    auto handle = [&](double db, Rgb color, const char* name) {
+      const double ty = thresholdY(db);
+      setRgb(cr, color, 0.9);
+      cairo_set_line_width(cr, 1.4);
+      cairo_move_to(cr, x + 14, ty);
+      cairo_line_to(cr, x + w - 14, ty);
+      cairo_stroke(cr);
+      setRgb(cr, color);
+      cairo_rectangle(cr, x + 4, ty - 5, 8, 10);
+      cairo_fill(cr);
+      char t[40];
+      std::snprintf(t, sizeof(t), "%s %+.1f", name, db);
+      text(cr, t, x + w - 18, ty - 4, 9, 2, color.r, color.g, color.b);
+    };
+    handle(shared.get(P_CLIP_UPPER), kGold, "UP");
+    handle(shared.get(P_CLIP_LOWER), kAmber, "LO");
+    std::snprintf(label, sizeof(label),
+                  "clip %.2f%%   restored peak %.1f dB   %s",
+                  shared.analysisClipPct.load(std::memory_order_relaxed),
+                  state.clipRestoredPeakDb,
+                  state.clipHistory[latest] > 0.5f ? "DETECTED" : "CLEAR");
+    text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
   } else if (page == 1) {
-    text(cr, "CLICK EVENTS / 240 BLOCKS", x + 14, y + 18, 10, 0,
-         kDim.r, kDim.g, kDim.b);
+    text(cr, "CLICK EVENTS", x + 14, y + 18, 10, 0, kDim.r, kDim.g, kDim.b);
     setRgb(cr, kAccent, 0.75);
     for (int i = 0; i < PanelState::kHistory; ++i) {
-      const double px = x + 12 + (w - 24) * i / (PanelState::kHistory - 1);
+      const double px = x + 12 + 470.0 * i / (PanelState::kHistory - 1);
       const double t = std::clamp(at(state.clickHistory, i) / 12.0, 0.0, 1.0);
       const double py = y + h - 18 - t * (h - 48);
       cairo_move_to(cr, px, y + h - 18);
       cairo_line_to(cr, px, py);
       cairo_stroke(cr);
     }
-    std::snprintf(label, sizeof(label), "latest %d event%s", (int)state.clickHistory[latest], state.clickHistory[latest] == 1 ? "" : "s");
+    const int count = shared.clickEventCount.load(std::memory_order_relaxed);
+    text(cr, "TIME       WIDTH     PEAK", x + 530, y + 38, 9, 0, kDim.r,
+         kDim.g, kDim.b);
+    for (int i = 0; i < std::min(count, 6); ++i) {
+      const float t =
+          shared.clickEventTime[i].load(std::memory_order_relaxed);
+      const float wdt =
+          shared.clickEventWidth[i].load(std::memory_order_relaxed);
+      const float pk = shared.clickEventPeak[i].load(std::memory_order_relaxed);
+      std::snprintf(label, sizeof(label), "%8.3f s   %5.1f ms   %+6.1f dB",
+                    t, wdt, pk);
+      text(cr, label, x + 530, y + 56 + i * 18, 10, 0, kText.r, kText.g,
+           kText.b);
+    }
+    if (count == 0) {
+      text(cr, "no events in the last block", x + 530, y + 56, 10, 0,
+           kDim.r, kDim.g, kDim.b);
+    }
+    std::snprintf(label, sizeof(label), "latest %d event%s",
+                  static_cast<int>(state.clickHistory[latest]),
+                  state.clickHistory[latest] == 1 ? "" : "s");
     text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
+    text(cr, "click a row to solo removed clicks", x + w - 14, y + h - 6, 10,
+         2, kDim.r, kDim.g, kDim.b);
   } else if (page == 2) {
-    text(cr, "HUM HARMONIC SERIES", x + 14, y + 18, 10, 0,
-         kDim.r, kDim.g, kDim.b);
+    text(cr, "HUM HARMONIC TABLE", x + 14, y + 18, 10, 0, kDim.r, kDim.g,
+         kDim.b);
     float hz = shared.humDetectedHz.load(std::memory_order_relaxed);
     if (hz <= 0.0f) {
       hz = static_cast<float>(shared.get(P_HUM_FREQ));
@@ -1358,27 +1593,88 @@ void Panel::drawStageVisual(cairo_t* cr, const Shared& shared,
       if (f > 1000.0) {
         break;
       }
-      const double px = x + 20 + (w - 40) * (std::log(f / 20.0) / std::log(50.0));
-      const double py0 = y + 40;
-      const double py1 = y + h - 30;
+      const double px =
+          x + 20 + 270.0 * (std::log(f / 20.0) / std::log(50.0));
       setRgb(cr, kAccent, k == 1 ? 0.95 : 0.45);
       cairo_set_line_width(cr, k == 1 ? 2.0 : 1.0);
-      cairo_move_to(cr, px, py0);
-      cairo_line_to(cr, px, py1);
+      cairo_move_to(cr, px, y + 34);
+      cairo_line_to(cr, px, y + h - 26);
       cairo_stroke(cr);
     }
-    std::snprintf(label, sizeof(label), "%.1f Hz   %d harmonics   %.0f dB deep",
+    const uint64_t mask = shared.humMask.load(std::memory_order_relaxed);
+    for (int idx = 0; idx < harmonics; ++idx) {
+      const int col = idx / 6;
+      const int row = idx % 6;
+      const double bx = x + 300 + col * 198.0;
+      const double by = y + 38 + row * 22.0;
+      const bool on = ((mask >> idx) & 1ull) != 0;
+      roundRect(cr, bx, by, 12, 12, 2);
+      setRgb(cr, on ? kAccent : Rgb{0.05, 0.07, 0.08});
+      cairo_fill(cr);
+      setRgb(cr, kEdge, 0.7);
+      cairo_set_line_width(cr, 1.0);
+      roundRect(cr, bx + 0.5, by + 0.5, 11, 11, 2);
+      cairo_stroke(cr);
+      std::snprintf(label, sizeof(label), "%2d  %6.1f Hz", idx + 1,
+                    static_cast<double>(hz) * (idx + 1));
+      text(cr, label, bx + 18, by + 10, 9.5, 0, on ? kText.r : kDim.r,
+           on ? kText.g : kDim.g, on ? kText.b : kDim.b);
+    }
+    std::snprintf(label, sizeof(label),
+                  "%.1f Hz   %d harmonics   %.0f dB deep   click a row to enable",
                   hz, harmonics, shared.get(P_HUM_DEPTH));
     text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
   } else if (page == 3) {
-    text(cr, "NOISE REDUCTION", x + 14, y + 18, 10, 0,
+    text(cr, "NOISE PROFILE / TARGET REDUCTION", x + 14, y + 18, 10, 0,
          kDim.r, kDim.g, kDim.b);
-    drawHistory(state.noiseHistory, 0.0, 30.0, kAccent, true);
-    std::snprintf(label, sizeof(label), "%.1f dB   profile %s",
-                  state.noiseHistory[latest],
-                  shared.profileValid.load(std::memory_order_relaxed)
-                      ? "ready"
-                      : "not learned");
+    float profile[64] = {};
+    const int bins = shared.profileBins.load(std::memory_order_relaxed);
+    const int total = shared.profileValid.load(std::memory_order_relaxed)
+                          ? std::min(bins, 64)
+                          : 0;
+    if (total > 0) {
+      for (int i = 0; i < total; ++i) {
+        profile[i] = shared.noiseProfile[static_cast<size_t>(
+            std::min(repair::kProfileBins - 1,
+                     i * (repair::kProfileBins - 1) / std::max(1, total - 1)))]
+                         .load(std::memory_order_relaxed);
+      }
+      auto curve = [&](float offsetDb, Rgb color, bool fill) {
+        cairo_new_path(cr);
+        for (int i = 0; i < total; ++i) {
+          const double px = x + 14 + (w - 28) * i / std::max(1, total - 1);
+          const double db = 20.0 * std::log10(profile[i] + 1.0e-12) + offsetDb;
+          const double t = std::clamp((db + 120.0) / 100.0, 0.0, 1.0);
+          const double py = y + h - 24 - t * (h - 54);
+          if (i == 0) {
+            cairo_move_to(cr, px, py);
+          } else {
+            cairo_line_to(cr, px, py);
+          }
+        }
+        if (fill) {
+          cairo_line_to(cr, x + w - 14, y + h - 24);
+          cairo_line_to(cr, x + 14, y + h - 24);
+          cairo_close_path(cr);
+          setRgb(cr, color, 0.12);
+          cairo_fill_preserve(cr);
+        }
+        setRgb(cr, color, 0.9);
+        cairo_set_line_width(cr, 1.3);
+        cairo_stroke(cr);
+      };
+      curve(0.0f, kAccent, true);
+      curve(-static_cast<float>(shared.get(P_NOISE_REDUCTION)), kGold, false);
+    } else {
+      text(cr, "learn a profile to see the noise curve", x + w * 0.5,
+           y + h * 0.5, 12, 1, kDim.r, kDim.g, kDim.b);
+    }
+    drawHistory(state.noiseHistory, 0.0, 30.0, kGreen, false);
+    std::snprintf(label, sizeof(label),
+                  "%.1f dB   profile %s   %d bins", state.noiseHistory[latest],
+                  shared.profileValid.load(std::memory_order_relaxed) ? "ready"
+                                                                     : "not learned",
+                  total);
     text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
   } else if (page == 4) {
     text(cr, "REVERB TAIL REDUCTION", x + 14, y + 18, 10, 0,
@@ -1409,7 +1705,8 @@ void Panel::drawStageVisual(cairo_t* cr, const Shared& shared,
   }
 }
 
-void Panel::drawAnalysis(cairo_t* cr, const Shared& shared) const {
+void Panel::drawAnalysis(cairo_t* cr, const Shared& shared,
+                         const PanelState& state) const {
   const bool ready = shared.analysisReady.load(std::memory_order_relaxed);
   const float progress =
       shared.analysisProgress.load(std::memory_order_relaxed);
@@ -1426,16 +1723,8 @@ void Panel::drawAnalysis(cairo_t* cr, const Shared& shared) const {
                   std::clamp(progress, 0.0f, 1.0f) * 100.0f);
   } else if (!ready) {
     std::snprintf(line, sizeof(line), "ANALYZE 3 s OF INPUT");
-  } else if (humHz > 0.0f) {
-    std::snprintf(line, sizeof(line),
-                  "HUM %.0f Hz %.0f dB   NOISE %.0f dB   CLIP %.2f%%   "
-                  "CLICKS %.1f/s   REVERB %.2f s",
-                  humHz, humDb, noiseDb, clipPct, clicks, reverb);
   } else {
-    std::snprintf(line, sizeof(line),
-                  "HUM none   NOISE %.0f dB   CLIP %.2f%%   CLICKS %.1f/s   "
-                  "REVERB %.2f s",
-                  noiseDb, clipPct, clicks, reverb);
+    std::snprintf(line, sizeof(line), "REVIEW SUGGESTIONS  ·  APPLY CHECKED");
   }
   text(cr, line, 140, 214, 13, 0, ready ? kText.r : kDim.r,
        ready ? kText.g : kDim.g, ready ? kText.b : kDim.b);
@@ -1447,11 +1736,141 @@ void Panel::drawAnalysis(cairo_t* cr, const Shared& shared) const {
     cairo_rectangle(cr, 140, 224, 600 * std::clamp(progress, 0.0f, 1.0f), 6);
     cairo_fill(cr);
   }
-  text(cr, "ANALYZE measures the raw input and APPLY suggests safe starts",
-       140, 238, 11, 0, kDim.r, kDim.g, kDim.b);
+  if (ready) {
+    const char* names[5] = {"HUM", "NOISE", "CLIP", "CLICKS", "REVERB"};
+    char values[5][80];
+    if (humHz > 0.0f) {
+      std::snprintf(values[0], sizeof(values[0]), "%.0f Hz  %.0f dB", humHz,
+                    humDb);
+    } else {
+      std::snprintf(values[0], sizeof(values[0]), "none");
+    }
+    std::snprintf(values[1], sizeof(values[1]), "%.0f dB", noiseDb);
+    std::snprintf(values[2], sizeof(values[2]), "%.2f%%", clipPct);
+    std::snprintf(values[3], sizeof(values[3]), "%.1f /s", clicks);
+    std::snprintf(values[4], sizeof(values[4]), "%.2f s", reverb);
+    for (int i = 0; i < 5; ++i) {
+      const double y = kAnalysisRowY + i * kAnalysisRowH;
+      const bool on = state.analysisApply[i];
+      roundRect(cr, 140, y, 18, 18, 3);
+      setRgb(cr, on ? kAccent : Rgb{0.06, 0.08, 0.09});
+      cairo_fill(cr);
+      setRgb(cr, kEdge, 0.8);
+      cairo_set_line_width(cr, 1.0);
+      roundRect(cr, 140.5, y + 0.5, 17, 17, 3);
+      cairo_stroke(cr);
+      if (on) {
+        setRgb(cr, Rgb{0.02, 0.05, 0.05});
+        cairo_set_line_width(cr, 2.0);
+        cairo_move_to(cr, 144, y + 9);
+        cairo_line_to(cr, 148, y + 14);
+        cairo_line_to(cr, 155, y + 4);
+        cairo_stroke(cr);
+      }
+      text(cr, names[i], 172, y + 14, 11, 0, kText.r, kText.g, kText.b);
+      text(cr, values[i], 282, y + 14, 11, 0, kDim.r, kDim.g, kDim.b);
+    }
+    text(cr, "click a checkbox to include or skip that module",
+         140, kAnalysisRowY + 5 * kAnalysisRowH + 16, 10, 0, kDim.r, kDim.g,
+         kDim.b);
+  } else {
+    text(cr, "ANALYZE measures the raw input; review each suggestion before "
+             "APPLY",
+         140, 252, 11, 0, kDim.r, kDim.g, kDim.b);
+  }
 }
 
-void Panel::applyAnalysis(Shared& shared) {
+void Panel::drawMonitorStrip(cairo_t* cr, const Shared& shared,
+                             const PanelState& state) const {
+  (void)state;
+  const int monitor = static_cast<int>(shared.get(P_MONITOR) + 0.5);
+  text(cr, "MONITOR", kMonX, kMonY + 18, 10, 0, kDim.r, kDim.g, kDim.b);
+  const char* names[3] = {"OUTPUT", "INPUT", "DELTA"};
+  for (int i = 0; i < 3; ++i) {
+    const double x = kMonX + 66 + i * kMonSegW;
+    roundRect(cr, x, kMonY, kMonSegW - 4, kMonH, 4);
+    setRgb(cr, monitor == i ? kAccent : Rgb{0.07, 0.095, 0.102});
+    cairo_fill(cr);
+    setRgb(cr, monitor == i ? Rgb{0.02, 0.05, 0.05} : kDim,
+           monitor == i ? 1.0 : 0.95);
+    text(cr, names[i], x + (kMonSegW - 4) * 0.5, kMonY + 18, 10, 1,
+         monitor == i ? 0.02 : kDim.r, monitor == i ? 0.05 : kDim.g,
+         monitor == i ? 0.05 : kDim.b);
+  }
+  const bool ab = shared.compare.load(std::memory_order_relaxed);
+  roundRect(cr, kMonABX, kMonY, kMonABW, kMonH, 4);
+  setRgb(cr, ab ? kGold : Rgb{0.07, 0.095, 0.102});
+  cairo_fill(cr);
+  text(cr, "A/B", kMonABX + kMonABW * 0.5, kMonY + 18, 10, 1,
+       ab ? 0.08 : kDim.r, ab ? 0.07 : kDim.g, ab ? 0.02 : kDim.b);
+}
+
+bool Panel::monitorHit(double x, double y, int* index) const {
+  if (y < kMonY || y > kMonY + kMonH) {
+    return false;
+  }
+  for (int i = 0; i < 3; ++i) {
+    const double sx = kMonX + 66 + i * kMonSegW;
+    if (x >= sx && x <= sx + kMonSegW - 4) {
+      if (index) {
+        *index = i;
+      }
+      return true;
+    }
+  }
+  if (x >= kMonABX && x <= kMonABX + kMonABW) {
+    if (index) {
+      *index = 3;
+    }
+    return true;
+  }
+  return false;
+}
+
+bool Panel::clipHistogramHit(const Shared& shared, double x, double y,
+                             int* which) const {
+  if (x < 56 || x > kPanelWidth - 56 || y < 420 || y > 610) {
+    return false;
+  }
+  auto thresholdY = [](double db) {
+    return 420.0 + 190.0 - 18.0 -
+           std::clamp((db + 60.0) / 60.0, 0.0, 1.0) * (190.0 - 48.0);
+  };
+  const double upper = thresholdY(shared.get(P_CLIP_UPPER));
+  const double lower = thresholdY(shared.get(P_CLIP_LOWER));
+  if (std::fabs(y - upper) <= 8.0) {
+    if (which) {
+      *which = 1;
+    }
+    return true;
+  }
+  if (std::fabs(y - lower) <= 8.0) {
+    if (which) {
+      *which = 2;
+    }
+    return true;
+  }
+  return false;
+}
+
+bool Panel::humTableHit(const PanelState& state, double x, double y,
+                        int* harmonic) const {
+  (void)state;
+  if (x < 356 || x > 1144 || y < 458 || y > 594) {
+    return false;
+  }
+  const int col = static_cast<int>((x - 356) / 198.0);
+  const int row = static_cast<int>((y - 458) / 22.0);
+  if (col < 0 || col > 3 || row < 0 || row > 5) {
+    return false;
+  }
+  if (harmonic) {
+    *harmonic = col * 6 + row;
+  }
+  return true;
+}
+
+void Panel::applyAnalysis(Shared& shared, const PanelState& state) {
   if (!shared.analysisReady.load(std::memory_order_relaxed)) {
     return;
   }
@@ -1463,35 +1882,37 @@ void Panel::applyAnalysis(Shared& shared) {
       shared.analysisClickRate.load(std::memory_order_relaxed);
   const float reverb = shared.analysisReverbSec.load(std::memory_order_relaxed);
 
-  if (humHz > 0.0f && humDb > -60.0f) {
+  if (state.analysisApply[0] && humHz > 0.0f && humDb > -60.0f) {
     shared.set(P_HUM_ON, 1.0);
     shared.set(P_HUM_AUTO, 0.0);
     shared.set(P_HUM_FREQ, std::clamp(static_cast<double>(humHz), 40.0, 70.0));
     shared.set(P_HUM_HARMONICS, 8.0);
     shared.set(P_HUM_DEPTH, std::clamp(static_cast<double>(-humDb + 6.0f), 12.0, 60.0));
-  } else {
+  } else if (state.analysisApply[0]) {
     shared.set(P_HUM_ON, 0.0);
   }
-  if (noiseDb < -45.0f) {
+  if (state.analysisApply[1] && noiseDb < -45.0f) {
     shared.set(P_NOISE_ON, 1.0);
     shared.set(P_NOISE_REDUCTION,
                std::clamp(static_cast<double>(-noiseDb - 30.0f), 6.0, 24.0));
-  } else {
+  } else if (state.analysisApply[1]) {
     shared.set(P_NOISE_ON, 0.0);
   }
-  shared.set(P_CLIP_ON, clipPct > 0.01f ? 1.0 : 0.0);
-  shared.set(P_CLIP_AUTO, 1.0);
-  if (clicks > 0.3f) {
+  if (state.analysisApply[2]) {
+    shared.set(P_CLIP_ON, clipPct > 0.01f ? 1.0 : 0.0);
+    shared.set(P_CLIP_AUTO, 1.0);
+  }
+  if (state.analysisApply[3] && clicks > 0.3f) {
     shared.set(P_CLICK_ON, 1.0);
     shared.set(P_CLICK_SENS, 5.0);
-  } else {
+  } else if (state.analysisApply[3]) {
     shared.set(P_CLICK_ON, 0.0);
   }
-  if (reverb > 0.4f) {
+  if (state.analysisApply[4] && reverb > 0.4f) {
     shared.set(P_VERB_ON, 1.0);
     shared.set(P_VERB_TAIL,
                std::clamp(static_cast<double>(reverb), 0.3, 2.5));
-  } else {
+  } else if (state.analysisApply[4]) {
     shared.set(P_VERB_ON, 0.0);
   }
 }
@@ -1653,6 +2074,126 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
     text(cr, "drag a box on the spectrogram", kSpecX + kSpecW,
          kSpecY + kSpecH + 24, 11, 2, kDim.r, kDim.g, kDim.b);
   }
+  if (state.historyOpen) {
+    drawSpectralHistory(cr, shared, state);
+  }
+}
+
+void Panel::drawSpectralHistory(cairo_t* cr, const Shared& shared,
+                                const PanelState& state) const {
+  (void)shared;
+  (void)state;
+  const double x = 790.0;
+  const double y = 386.0;
+  const double w = 354.0;
+  const double h = 252.0;
+  roundRect(cr, x, y, w, h, 6);
+  setRgb(cr, Rgb{0.027, 0.038, 0.044}, 0.985);
+  cairo_fill(cr);
+  setRgb(cr, kAccent, 0.75);
+  cairo_set_line_width(cr, 1.0);
+  roundRect(cr, x + 0.5, y + 0.5, w - 1, h - 1, 6);
+  cairo_stroke(cr);
+  text(cr, "SPECTRAL HISTORY", x + 14, y + 22, 11, 0, kText.r, kText.g,
+       kText.b);
+  text(cr, "click an entry to restore", x + w - 14, y + 22, 9, 2, kDim.r,
+       kDim.g, kDim.b);
+  const int rows = std::min(9, static_cast<int>(undoNames_.size()));
+  for (int r = 0; r < rows; ++r) {
+    const int idx = static_cast<int>(undoNames_.size()) - 1 - r;
+    const double ry = y + 34 + r * 23.0;
+    if (r == 0) {
+      roundRect(cr, x + 6, ry - 1, w - 12, 21, 3);
+      setRgb(cr, kAccent, 0.15);
+      cairo_fill(cr);
+    }
+    text(cr, undoNames_[static_cast<size_t>(idx)].c_str(), x + 16, ry + 13,
+         10, 0, kText.r, kText.g, kText.b);
+  }
+  if (undoNames_.empty()) {
+    text(cr, "no edits yet", x + 18, y + 56, 10, 0, kDim.r, kDim.g, kDim.b);
+  }
+}
+
+void Panel::restoreHistory(Shared& shared, PanelState& state, int index) {
+  if (index < 0 || index >= static_cast<int>(undoStack_.size())) {
+    return;
+  }
+  auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
+  if (!bridge) {
+    return;
+  }
+  std::vector<SpectralEdit> current;
+  bridge->copyEdits(&current);
+  redoStack_.push_back(std::move(current));
+  redoNames_.push_back("Current");
+  bridge->replaceEdits(undoStack_[static_cast<size_t>(index)]);
+  undoStack_.resize(static_cast<size_t>(index));
+  if (undoNames_.size() > static_cast<size_t>(index)) {
+    undoNames_.resize(static_cast<size_t>(index));
+  }
+  state.editCount = bridge->editCount();
+  state.hasSelection = false;
+  state.historyOpen = false;
+  diffValid_ = false;
+  if (state.previewMode) {
+    setPreview(shared, state);
+  }
+}
+
+void Panel::selectHarmonics(Shared& shared, PanelState& state) {
+  if (state.specW <= 0 || state.specH <= 0 || captureL_.empty()) {
+    return;
+  }
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double total = static_cast<double>(captureL_.size()) / sr;
+  const double t0 = plotTime(state, std::min(state.selX0, state.selX1));
+  const double t1 = plotTime(state, std::max(state.selX0, state.selX1));
+  const int c0 = std::clamp(static_cast<int>(
+                                (t0 - state.specStartTime) /
+                                std::max(1.0e-9, total) * state.specW),
+                            0, state.specW - 1);
+  const int c1 = std::clamp(static_cast<int>(
+                                (t1 - state.specStartTime) /
+                                std::max(1.0e-9, total) * state.specW),
+                            c0, state.specW - 1);
+  if (c1 <= c0) {
+    return;
+  }
+  float fundamental = shared.humDetectedHz.load(std::memory_order_relaxed);
+  if (fundamental <= 0.0f) {
+    fundamental = static_cast<float>(shared.get(P_HUM_FREQ));
+  }
+  fundamental = std::clamp(fundamental, 20.0f, 2000.0f);
+  const int harmonics = std::clamp(
+      static_cast<int>(shared.get(P_HUM_HARMONICS) + 0.5), 1, 32);
+  if (state.specMask.size() !=
+      static_cast<size_t>(state.specW) * state.specH) {
+    state.specMask.assign(static_cast<size_t>(state.specW) * state.specH, 0);
+  } else {
+    std::fill(state.specMask.begin(), state.specMask.end(), 0);
+  }
+  for (int row = 0; row < state.specH; ++row) {
+    const double t = static_cast<double>(row) / (state.specH - 1);
+    const double hz = 20000.0 * std::pow(0.001, t);
+    bool on = false;
+    for (int k = 1; k <= harmonics; ++k) {
+      const double f = fundamental * k;
+      const double width = std::max(6.0, f * 0.012);
+      if (std::fabs(hz - f) <= width) {
+        on = true;
+        break;
+      }
+    }
+    if (!on) {
+      continue;
+    }
+    for (int c = c0; c <= c1; ++c) {
+      state.specMask[static_cast<size_t>(row * state.specW + c)] = 1;
+    }
+  }
+  state.hasSelection = true;
+  updateSelectionBoundsFromMask(state);
 }
 
 void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
@@ -1676,17 +2217,35 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
   cairo_stroke(cr);
 
   drawHeader(cr, shared, state);
+  drawMonitorStrip(cr, shared, state);
   if (state.tab == 5) {
     drawSpectralPage(cr, shared, state);
   } else {
     drawStageVisual(cr, shared, state, state.tab);
     if (state.tab == 6) {
-      drawAnalysis(cr, shared);
+      drawAnalysis(cr, shared, state);
     }
   }
 
   for (const Widget& w : widgets_) {
     drawWidget(cr, w, shared, state);
+  }
+  if (hoverParam_ >= 0 && hoverParam_ < static_cast<int>(P_COUNT)) {
+    const ParamSpec& spec = kParamSpecs[hoverParam_];
+    char tip[160];
+    std::snprintf(tip, sizeof(tip), "%s  ·  %s", spec.name,
+                  formatValue(spec, shared.get(static_cast<uint32_t>(hoverParam_))).c_str());
+    const double tw = 220.0;
+    const double tx = std::clamp(hoverX_ + 14.0, 4.0, kPanelWidth - tw - 4.0);
+    const double ty = std::clamp(hoverY_ - 30.0, 64.0, kPanelHeight - 64.0);
+    roundRect(cr, tx, ty, tw, 24, 4);
+    setRgb(cr, Rgb{0.02, 0.035, 0.04}, 0.96);
+    cairo_fill(cr);
+    setRgb(cr, kAccent, 0.75);
+    cairo_set_line_width(cr, 1.0);
+    roundRect(cr, tx + 0.5, ty + 0.5, tw - 1, 23, 4);
+    cairo_stroke(cr);
+    text(cr, tip, tx + 8, ty + 16, 10, 0, kText.r, kText.g, kText.b);
   }
 
   // Footer / status
@@ -1872,15 +2431,19 @@ void Panel::drawWidget(cairo_t* cr, const Widget& w, const Shared& shared,
       drawChoice(cr, w, static_cast<int>(shared.get(w.param) + 0.5));
       break;
     case Kind::Button: {
+      const bool active =
+          w.action >= 80 && w.action <= 86 &&
+          std::fabs(shared.get(P_AUDITION) - (w.action - 79)) < 0.5;
       roundRect(cr, w.x, w.y, w.w, w.h, 5);
-      setRgb(cr, kPanelLight);
+      setRgb(cr, active ? kAccent : kPanelLight);
       cairo_fill(cr);
       setRgb(cr, kEdge, 0.8);
       cairo_set_line_width(cr, 1.0);
       roundRect(cr, w.x + 0.5, w.y + 0.5, w.w - 1, w.h - 1, 5);
       cairo_stroke(cr);
       text(cr, w.label, w.x + w.w * 0.5, w.y + w.h * 0.5 + 4, 11, 1,
-           kText.r, kText.g, kText.b);
+           active ? 0.02 : kText.r, active ? 0.05 : kText.g,
+           active ? 0.05 : kText.b);
       break;
     }
   }
@@ -1995,15 +2558,22 @@ void Panel::drawChoice(cairo_t* cr, const Widget& w, int selected) const {
 void Panel::drawTextEntry(cairo_t* cr, const Shared& shared,
                           const PanelState& state) const {
   (void)shared;
-  roundRect(cr, editBoxX_, editBoxY_, 170, 40, 5);
-  setRgb(cr, Rgb{0.02, 0.03, 0.035});
+  const ParamSpec& spec = kParamSpecs[editParam_];
+  roundRect(cr, editBoxX_, editBoxY_, PanelState::kEditW, PanelState::kEditH,
+            5);
+  setRgb(cr, Rgb{0.02, 0.03, 0.035}, 0.99);
   cairo_fill(cr);
   setRgb(cr, kAccent, 0.9);
   cairo_set_line_width(cr, 1.2);
-  roundRect(cr, editBoxX_ + 0.5, editBoxY_ + 0.5, 169, 39, 5);
+  roundRect(cr, editBoxX_ + 0.5, editBoxY_ + 0.5, PanelState::kEditW - 1,
+            PanelState::kEditH - 1, 5);
   cairo_stroke(cr);
-  text(cr, state.editText.c_str(), editBoxX_ + 10, editBoxY_ + 26, 14, 0,
-       kGold.r, kGold.g, kGold.b);
+  text(cr, spec.name, editBoxX_ + 8, editBoxY_ + 13, 8.5, 0, kDim.r, kDim.g,
+       kDim.b);
+  const std::string shown =
+      (state.editText.empty() ? "type a value" : state.editText) + "|";
+  text(cr, shown.c_str(), editBoxX_ + 8, editBoxY_ + 31, 12, 0, kGold.r,
+       kGold.g, kGold.b);
 }
 
 bool Panel::hit(const Widget& w, double x, double y) const {
@@ -2022,6 +2592,62 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
   if (handlePresetClick(shared, state, x, y)) {
     return true;
   }
+  int mon = -1;
+  if (monitorHit(x, y, &mon)) {
+    if (mon == 3) {
+      const bool ab = shared.compare.load(std::memory_order_relaxed);
+      shared.compare.store(!ab, std::memory_order_relaxed);
+    } else {
+      shared.set(P_MONITOR, static_cast<double>(mon));
+      shared.set(P_DELTA, mon == 2 ? 1.0 : 0.0);
+      state.presetDirty = true;
+    }
+    return true;
+  }
+  if (state.tab == 5 && state.historyOpen) {
+    const double hx = 790.0;
+    const double hy = 386.0;
+    if (x >= hx && x <= hx + 354.0 && y >= hy && y <= hy + 252.0) {
+      const int row = static_cast<int>((y - (hy + 34.0)) / 23.0);
+      if (row >= 0 && row < static_cast<int>(undoNames_.size()) && row < 9) {
+        const int idx = static_cast<int>(undoNames_.size()) - 1 - row;
+        restoreHistory(shared, state, idx);
+      }
+      return true;
+    }
+    state.historyOpen = false;
+  }
+  if (state.tab == 0) {
+    int which = 0;
+    if (clipHistogramHit(shared, x, y, &which)) {
+      clipDrag_ = which;
+      return true;
+    }
+  }
+  if (state.tab == 1 && x >= 580 && x <= 1080 && y >= 462 && y <= 574) {
+    shared.set(P_AUDITION, 2.0);
+    shared.set(P_MONITOR, 0.0);
+    shared.set(P_DELTA, 0.0);
+    state.presetDirty = true;
+    return true;
+  }
+  if (state.tab == 6 && x >= 132 && x <= 172 &&
+      y >= kAnalysisRowY && y < kAnalysisRowY + 5 * kAnalysisRowH) {
+    const int row = static_cast<int>((y - kAnalysisRowY) / kAnalysisRowH);
+    if (row >= 0 && row < 5) {
+      state.analysisApply[row] = !state.analysisApply[row];
+      return true;
+    }
+  }
+  if (state.tab == 2) {
+    int harmonic = -1;
+    if (humTableHit(state, x, y, &harmonic) && harmonic >= 0) {
+      uint64_t mask = shared.humMask.load(std::memory_order_relaxed);
+      mask ^= (1ull << harmonic);
+      shared.humMask.store(mask, std::memory_order_relaxed);
+      return true;
+    }
+  }
   for (const Widget& w : widgets_) {
     if (!hit(w, x, y)) {
       continue;
@@ -2034,12 +2660,25 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
       case Kind::PageTab:
         state.tab = static_cast<int>(w.value);
         return true;
-      case Kind::Knob:
+      case Kind::Knob: {
+        const double now = nowMs();
+        const bool doubleClick =
+            lastClickParam_ == static_cast<int>(w.param) &&
+            now - lastClickTime_ <= PanelState::kDoubleClickMs;
+        lastClickParam_ = static_cast<int>(w.param);
+        lastClickTime_ = now;
+        if (doubleClick) {
+          shared.set(w.param, presetResetValue(state, w.param));
+          state.presetDirty = true;
+          dragParam_ = -1;
+          return true;
+        }
         dragParam_ = static_cast<int>(w.param);
         dragStartY_ = y;
         dragStartValue_ = shared.get(w.param);
         (void)fine;
         return false;
+      }
       case Kind::Toggle:
         shared.set(w.param, shared.get(w.param) > 0.5 ? 0.0 : 1.0);
         state.presetDirty = true;
@@ -2077,7 +2716,7 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
         } else if (w.action == 3) {
           shared.captureFreeze.store(true, std::memory_order_relaxed);
         } else if (w.action == 4) {
-          pushUndo(shared);
+          pushUndo(shared, "Clear edits");
           shared.clearEdits.store(true, std::memory_order_relaxed);
           if (auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed)) {
             bridge->clearEdits();
@@ -2123,7 +2762,48 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
         } else if (w.action == 20) {
           shared.analyzeRequest.store(true, std::memory_order_relaxed);
         } else if (w.action == 21) {
-          applyAnalysis(shared);
+          applyAnalysis(shared, state);
+        } else if (w.action == 22) {
+          state.specTool = 3;
+          state.specMask.assign(static_cast<size_t>(state.specW) * state.specH,
+                                0);
+          state.hasSelection = false;
+          lassoPoints_.clear();
+        } else if (w.action == 23) {
+          state.historyOpen = !state.historyOpen;
+        } else if (w.action == 24) {
+          static const double kGammas[] = {0.8, 1.0, 1.25, 1.6, 2.0};
+          int at = 2;
+          for (int i = 0; i < 5; ++i) {
+            if (std::fabs(state.specGamma - kGammas[i]) < 1.0e-6) {
+              at = i;
+            }
+          }
+          state.specGamma = kGammas[(at + 1) % 5];
+          buildSpectrogram(state);
+        } else if (w.action == 25) {
+          static const float kRanges[] = {36.0f, 48.0f, 60.0f, 72.0f, 84.0f};
+          int at = 2;
+          for (int i = 0; i < 5; ++i) {
+            if (std::fabs(state.specRangeDb - kRanges[i]) < 1.0e-6) {
+              at = i;
+            }
+          }
+          state.specRangeDb = kRanges[(at + 1) % 5];
+          buildSpectrogram(state);
+        } else if (w.action == 60) {
+          resetModule(shared, state, state.tab);
+        } else if (w.action == 70) {
+          applyModulePreset(shared, state, state.tab);
+        } else if (w.action >= 80 && w.action <= 86) {
+          const double page = static_cast<double>(w.action - 79);
+          const double cur = shared.get(P_AUDITION);
+          shared.set(P_AUDITION, std::fabs(cur - page) < 0.5 ? 0.0 : page);
+          if (shared.get(P_AUDITION) > 0.5) {
+            shared.set(P_MONITOR, 0.0);
+            shared.set(P_DELTA, 0.0);
+          }
+          state.presetDirty = true;
         }
         return true;
     }
@@ -2158,6 +2838,12 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
 
 bool Panel::contextDown(Shared& shared, PanelState& state, double x, double y) {
   (void)shared;
+  for (const Widget& w : widgets_) {
+    if (w.kind == Kind::Knob && hit(w, x, y)) {
+      beginTextEntry(shared, state, x, y);
+      return true;
+    }
+  }
   if (state.tab == 5 && plotHit(x, y) && state.specZoom > 1.001) {
     plotPan_ = true;
     panStartX_ = x;
@@ -2167,17 +2853,136 @@ bool Panel::contextDown(Shared& shared, PanelState& state, double x, double y) {
   return false;
 }
 
+void Panel::beginTextEntry(Shared& shared, PanelState& state, double x,
+                           double y) {
+  (void)shared;
+  state.presetOpen = 0;
+  state.historyOpen = false;
+  for (const Widget& w : widgets_) {
+    if (w.kind != Kind::Knob || !hit(w, x, y)) {
+      continue;
+    }
+    editing_ = true;
+    editParam_ = w.param;
+    state.editParam = static_cast<int>(w.param);
+    state.editText.clear();
+    editBoxX_ = std::clamp(x + 16.0, 4.0, kPanelWidth - PanelState::kEditW - 4.0);
+    editBoxY_ = std::clamp(y - PanelState::kEditH - 14.0, 4.0,
+                           kPanelHeight - PanelState::kEditH - 4.0);
+    return;
+  }
+}
+
+bool Panel::textKey(Shared& shared, PanelState& state, int key,
+                    const char* text) {
+  if (!editing_) {
+    return false;
+  }
+  if (key == 13) {
+    return commitTextEntry(shared, state);
+  }
+  if (key == 27) {
+    editing_ = false;
+    state.editText.clear();
+    return true;
+  }
+  if (key == 8) {
+    if (!state.editText.empty()) {
+      state.editText.pop_back();
+    }
+    return true;
+  }
+  if (text) {
+    for (const char* c = text; *c; ++c) {
+      if (*c >= 32 && *c < 127 && state.editText.size() < 24) {
+        state.editText.push_back(*c);
+      }
+    }
+  }
+  return true;
+}
+
+bool Panel::commitTextEntry(Shared& shared, PanelState& state) {
+  if (!editing_) {
+    return false;
+  }
+  editing_ = false;
+  if (state.editText.empty()) {
+    return false;
+  }
+  double value = 0.0;
+  if (!parseParamValue(kParamSpecs[editParam_], state.editText, &value)) {
+    return false;
+  }
+  shared.set(editParam_, value);
+  state.presetDirty = true;
+  state.editText.clear();
+  return true;
+}
+
 bool Panel::keyEvent(Shared& shared, PanelState& state, int key,
                      const char* text) {
-  (void)shared;
-  (void)state;
-  (void)key;
-  (void)text;
-  return false;
+  if (textKey(shared, state, key, text)) {
+    return true;
+  }
+  if (!text || !text[0]) {
+    return false;
+  }
+  switch (text[0]) {
+    case 'd':
+    case 'D': {
+      const bool on = shared.get(P_MONITOR) > 1.5;
+      shared.set(P_MONITOR, on ? 0.0 : 2.0);
+      shared.set(P_DELTA, on ? 0.0 : 1.0);
+      return true;
+    }
+    case 'o':
+    case 'O':
+      shared.set(P_MONITOR, 0.0);
+      shared.set(P_DELTA, 0.0);
+      return true;
+    case 'i':
+    case 'I':
+      shared.set(P_MONITOR, 1.0);
+      return true;
+    case 'z':
+    case 'Z':
+      shared.undoParameter();
+      state.presetDirty = true;
+      return true;
+    case 'y':
+    case 'Y':
+      shared.redoParameter();
+      state.presetDirty = true;
+      return true;
+    case 'b':
+    case 'B': {
+      const bool ab = shared.compare.load(std::memory_order_relaxed);
+      shared.compare.store(!ab, std::memory_order_relaxed);
+      return true;
+    }
+    case '[':
+      state.tab = std::max(0, state.tab - 1);
+      return true;
+    case ']':
+      state.tab = std::min(6, state.tab + 1);
+      return true;
+    default:
+      return false;
+  }
 }
 
 bool Panel::pointerMove(Shared& shared, PanelState& state, double x, double y,
                         bool fine) {
+  hoverX_ = x;
+  hoverY_ = y;
+  if (clipDrag_) {
+    const double t = std::clamp((610.0 - y) / (190.0 - 48.0), 0.0, 1.0);
+    const double db = -60.0 + t * 60.0;
+    shared.set(clipDrag_ == 1 ? P_CLIP_UPPER : P_CLIP_LOWER, db);
+    state.presetDirty = true;
+    return true;
+  }
   if (plotPan_) {
     const double total =
         static_cast<double>(captureL_.size()) /
@@ -2212,8 +3017,14 @@ bool Panel::pointerMove(Shared& shared, PanelState& state, double x, double y,
     state.selecting = true;
     return true;
   }
-  (void)x;
   if (dragParam_ < 0) {
+    hoverParam_ = -1;
+    for (const Widget& w : widgets_) {
+      if (w.kind == Kind::Knob && hit(w, x, y)) {
+        hoverParam_ = static_cast<int>(w.param);
+        break;
+      }
+    }
     return false;
   }
   const uint32_t param = static_cast<uint32_t>(dragParam_);
@@ -2232,6 +3043,7 @@ void Panel::pointerUp(Shared& shared, PanelState& state) {
   (void)shared;
   dragParam_ = -1;
   plotPan_ = false;
+  clipDrag_ = 0;
   if (selectionDrag_) {
     selectionDrag_ = false;
     state.selecting = false;
@@ -2242,6 +3054,8 @@ void Panel::pointerUp(Shared& shared, PanelState& state) {
       }
     } else if (state.specTool == 1) {
       selectLasso(state);
+    } else if (state.specTool == 3) {
+      selectHarmonics(shared, state);
     }
     bool any = false;
     for (uint8_t v : state.specMask) {
@@ -2307,6 +3121,46 @@ bool Panel::wheel(Shared& shared, PanelState& state, double x, double y,
     return true;
   }
   return false;
+}
+
+void Panel::resetModule(Shared& shared, PanelState& state, int page) {
+  static const char* kModules[7] = {"De-Clip", "De-Click", "De-Hum",
+                                    "De-Noise", "De-Reverb", "Spectral",
+                                    "Global"};
+  for (uint32_t p = 0; p < P_COUNT; ++p) {
+    const char* module = kParamSpecs[p].module;
+    bool match = false;
+    if (page >= 0 && page < 6) {
+      match = std::strcmp(module, kModules[page]) == 0;
+    } else {
+      match = std::strcmp(module, "Global") == 0 ||
+              std::strcmp(module, "Output") == 0;
+    }
+    if (match && p != P_POWER && p != P_MONITOR && p != P_AUDITION) {
+      shared.set(p, kParamSpecs[p].def);
+    }
+  }
+  if (page >= 0 && page < 7) {
+    state.modulePreset[page] = 0;
+  }
+  state.presetDirty = true;
+}
+
+void Panel::applyModulePreset(Shared& shared, PanelState& state, int page) {
+  if (page < 0 || page > 6) {
+    return;
+  }
+  const auto& list = modulePresets()[static_cast<size_t>(page)];
+  if (list.empty()) {
+    return;
+  }
+  state.modulePreset[page] =
+      (state.modulePreset[page] + 1) % static_cast<int>(list.size());
+  const auto& preset = list[static_cast<size_t>(state.modulePreset[page])];
+  for (const ModulePresetValue& v : preset.values) {
+    shared.set(v.param, v.value);
+  }
+  state.presetDirty = true;
 }
 
 void Panel::applyPreset(Shared& shared, PanelState& state, int index) const {

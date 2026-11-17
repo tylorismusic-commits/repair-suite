@@ -49,6 +49,12 @@ public:
     updateDryDelay();
     dryBlockL_.assign(16384, 0.0f);
     dryBlockR_.assign(16384, 0.0f);
+    stageL_.assign(16384, 0.0f);
+    stageR_.assign(16384, 0.0f);
+    stftDryReL_.assign(static_cast<size_t>(stft_.bins()), 0.0f);
+    stftDryImL_.assign(static_cast<size_t>(stft_.bins()), 0.0f);
+    stftDryReR_.assign(static_cast<size_t>(stft_.bins()), 0.0f);
+    stftDryImR_.assign(static_cast<size_t>(stft_.bins()), 0.0f);
     reset();
   }
 
@@ -144,9 +150,30 @@ public:
       dryBlockR_[static_cast<size_t>(i)] = right[i];
     }
 
+    // Per-stage audition: copy the stage input, run the stage, then replace
+    // its output with the removed difference.  Downstream modules still run,
+    // so the audition is heard through the same tail as the main chain.
+    const int n = std::min(frames, static_cast<int>(stageL_.size()));
+    auto copyStageInput = [&]() {
+      for (int i = 0; i < n; ++i) {
+        stageL_[static_cast<size_t>(i)] = left[i];
+        stageR_[static_cast<size_t>(i)] = right[i];
+      }
+    };
+    auto makeStageDifference = [&]() {
+      for (int i = 0; i < n; ++i) {
+        left[i] -= stageL_[static_cast<size_t>(i)];
+        right[i] -= stageR_[static_cast<size_t>(i)];
+      }
+    };
+
     // De-Clip runs first, directly on the input, before any filtering.  It
     // always runs, even when bypassed, so the reported latency stays exact.
+    copyStageInput();
     declip_.process(left, right, frames);
+    if (controls_.audition == 0) {
+      makeStageDifference();
+    }
 
     // DC / rumble filter, after De-Clip and before the detectors.
     if (controls_.dcOn && controls_.power) {
@@ -157,27 +184,77 @@ public:
     }
 
     // De-Click runs next, before hum and broadband cleanup.
+    copyStageInput();
     declick_.process(left, right, frames);
+    if (controls_.audition == 1) {
+      makeStageDifference();
+    }
 
     // De-Hum is zero latency, so it does not add to the reported total.
+    copyStageInput();
     dehum_.process(left, right, frames);
+    if (controls_.audition == 2) {
+      makeStageDifference();
+    }
 
     // De-Noise and De-Reverb share the STFT pass.
     stft_.process(left, right, frames,
                   [this](float* reL, float* imL, float* reR, float* imR,
                          int bins) {
+                    const size_t nb = static_cast<size_t>(bins);
+                    if (stftDryReL_.size() < nb) {
+                      stftDryReL_.resize(nb);
+                      stftDryImL_.resize(nb);
+                      stftDryReR_.resize(nb);
+                      stftDryImR_.resize(nb);
+                    }
+                    if (controls_.audition == 3) {
+                      std::copy(reL, reL + bins, stftDryReL_.begin());
+                      std::copy(imL, imL + bins, stftDryImL_.begin());
+                      std::copy(reR, reR + bins, stftDryReR_.begin());
+                      std::copy(imR, imR + bins, stftDryImR_.begin());
+                      denoise_.processBins(reL, imL, reR, imR, bins);
+                      for (int k = 0; k < bins; ++k) {
+                        reL[k] = stftDryReL_[static_cast<size_t>(k)] - reL[k];
+                        imL[k] = stftDryImL_[static_cast<size_t>(k)] - imL[k];
+                        reR[k] = stftDryReR_[static_cast<size_t>(k)] - reR[k];
+                        imR[k] = stftDryImR_[static_cast<size_t>(k)] - imR[k];
+                      }
+                      return;
+                    }
                     denoise_.processBins(reL, imL, reR, imR, bins);
+                    if (controls_.audition == 4) {
+                      std::copy(reL, reL + bins, stftDryReL_.begin());
+                      std::copy(imL, imL + bins, stftDryImL_.begin());
+                      std::copy(reR, reR + bins, stftDryReR_.begin());
+                      std::copy(imR, imR + bins, stftDryImR_.begin());
+                      dereverb_.processBins(reL, imL, reR, imR, bins);
+                      for (int k = 0; k < bins; ++k) {
+                        reL[k] = stftDryReL_[static_cast<size_t>(k)] - reL[k];
+                        imL[k] = stftDryImL_[static_cast<size_t>(k)] - imL[k];
+                        reR[k] = stftDryReR_[static_cast<size_t>(k)] - reR[k];
+                        imR[k] = stftDryImR_[static_cast<size_t>(k)] - imR[k];
+                      }
+                      return;
+                    }
                     dereverb_.processBins(reL, imL, reR, imR, bins);
                   });
 
     // The spectral tap is after De-Reverb and before Output trim, so the
     // editor sees exactly what the final chain produces.
     capture_.push(left, right, frames, hostTime, hostTimeValid);
+    copyStageInput();
     if (controls_.specOn && controls_.power) {
       capture_.applyOverlay(left, right, frames, hostTime, hostTimeValid);
     }
+    if (controls_.audition == 5) {
+      makeStageDifference();
+    }
 
     const float outGain = outputGain_.next();
+    const bool monitorInput = controls_.monitor == 1 || controls_.compare;
+    const bool monitorDelta = !monitorInput && controls_.audition < 0 &&
+                              (controls_.delta || controls_.monitor == 2);
     for (int i = 0; i < frames; ++i) {
       left[i] *= outGain;
       right[i] *= outGain;
@@ -188,9 +265,12 @@ public:
         dryL_[static_cast<size_t>(dryWrite_)] = dryBlockL_[static_cast<size_t>(i)];
         dryR_[static_cast<size_t>(dryWrite_)] = dryBlockR_[static_cast<size_t>(i)];
         dryWrite_ = (dryWrite_ + 1) % drySize_;
-        if (controls_.delta && controls_.power) {
-          left[i] -= dryL;
-          right[i] -= dryR;
+        if (monitorInput && controls_.power) {
+          left[i] = dryL * outGain;
+          right[i] = dryR * outGain;
+        } else if (monitorDelta && controls_.power) {
+          left[i] -= dryL * outGain;
+          right[i] -= dryR * outGain;
         }
       }
       peakOut = std::max(peakOut, std::max(std::fabs(left[i]),
@@ -233,6 +313,17 @@ public:
     meters.clipActivity = declip_.lastClipCount() > 0 ? 1.0f : 0.0f;
     meters.clickEvents = declick_.lastClicks();
     meters.humDetectedHz = dehum_.detectedHz();
+    const auto& clicks = declick_.lastEvents();
+    meters.clickEventCount = std::min(static_cast<int>(clicks.size()), 8);
+    for (int i = 0; i < meters.clickEventCount; ++i) {
+      meters.clickEventList[i].timeSec =
+          static_cast<float>(hostTime) +
+          static_cast<float>(clicks[static_cast<size_t>(i)].offsetSamples) / sr_;
+      meters.clickEventList[i].widthMs =
+          clicks[static_cast<size_t>(i)].widthMs;
+      meters.clickEventList[i].peakDb =
+          clicks[static_cast<size_t>(i)].peakDb;
+    }
   }
 
   SpectralCapture& capture() noexcept { return capture_; }
@@ -272,6 +363,8 @@ private:
   int drySize_ = 1;
   std::vector<float> dryL_, dryR_;
   std::vector<float> dryBlockL_, dryBlockR_;
+  std::vector<float> stageL_, stageR_;
+  std::vector<float> stftDryReL_, stftDryImL_, stftDryReR_, stftDryImR_;
   int dryWrite_ = 0;
   int frameIndex_ = 2;
 };
