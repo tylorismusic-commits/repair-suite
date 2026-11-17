@@ -1995,6 +1995,42 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
     text(cr, label, kSpecX - 8, y + 4, 9, 2, kDim.r, kDim.g, kDim.b);
   }
 
+  // Harmonic tool preview: show the bands that will be selected while the
+  // user is still dragging the time range.  Without this the HARM tool looks
+  // inert until mouse-up.
+  if (state.selecting && state.specTool == 3) {
+    float fundamental = shared.humDetectedHz.load(std::memory_order_relaxed);
+    if (fundamental <= 0.0f) {
+      fundamental = static_cast<float>(shared.get(P_HUM_FREQ));
+    }
+    fundamental = std::clamp(fundamental, 20.0f, 2000.0f);
+    const int harmonics = std::clamp(
+        static_cast<int>(shared.get(P_HUM_HARMONICS) + 0.5), 1, 32);
+    const double px0 = std::clamp(std::min(state.selX0, state.selX1), kSpecX,
+                                  kSpecX + kSpecW);
+    const double px1 = std::clamp(std::max(state.selX0, state.selX1), kSpecX,
+                                  kSpecX + kSpecW);
+    setRgb(cr, kAccent, 0.10);
+    cairo_rectangle(cr, px0, kSpecY, px1 - px0, kSpecH);
+    cairo_fill(cr);
+    for (int k = 1; k <= harmonics; ++k) {
+      const double f = fundamental * static_cast<double>(k);
+      if (f > 20000.0) {
+        break;
+      }
+      const double y = hzToY(f);
+      setRgb(cr, kGold, k == 1 ? 0.90 : 0.55);
+      cairo_set_line_width(cr, k == 1 ? 2.0 : 1.0);
+      cairo_move_to(cr, px0, y);
+      cairo_line_to(cr, px1, y);
+      cairo_stroke(cr);
+    }
+    setRgb(cr, kAccent, 0.75);
+    cairo_set_line_width(cr, 1.2);
+    cairo_rectangle(cr, px0, kSpecY, px1 - px0, kSpecH);
+    cairo_stroke(cr);
+  }
+
   // Selection.  The mask is drawn as merged cell runs so lasso/brush shapes
   // stay cheap even at full resolution.
   if (state.hasSelection && state.specTool == 0) {
@@ -2006,11 +2042,11 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
                                  kSpecY + kSpecH);
     const double y1 = std::clamp(std::max(state.selY0, state.selY1), kSpecY,
                                  kSpecY + kSpecH);
-    setRgb(cr, kAccent, 0.18);
+    setRgb(cr, kAccent, 0.26);
     cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
     cairo_fill(cr);
-    setRgb(cr, kAccent, 0.85);
-    cairo_set_line_width(cr, 1.3);
+    setRgb(cr, kAccent, 0.95);
+    cairo_set_line_width(cr, 1.8);
     cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
     cairo_stroke(cr);
   } else if (state.hasSelection && state.specMask.size() ==
@@ -2067,11 +2103,11 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
                                    kSpecY + kSpecH);
       const double y1 = std::clamp(std::max(state.selY0, state.selY1), kSpecY,
                                    kSpecY + kSpecH);
-      setRgb(cr, kAccent, 0.18);
+      setRgb(cr, kAccent, 0.26);
       cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
       cairo_fill(cr);
-      setRgb(cr, kAccent, 0.9);
-      cairo_set_line_width(cr, 1.4);
+      setRgb(cr, kAccent, 1.0);
+      cairo_set_line_width(cr, 1.8);
       cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
       cairo_stroke(cr);
     }
@@ -2091,6 +2127,15 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
   if (state.timelineStale) {
     text(cr, "timeline moved — re-capture edits", kSpecX + kSpecW,
          kSpecY + kSpecH + 24, 11, 2, kAmber.r, kAmber.g, kAmber.b);
+  } else if (state.selecting) {
+    const char* tool = state.specTool == 1 ? "LASSO"
+                       : state.specTool == 2 ? "BRUSH"
+                       : state.specTool == 3 ? "HARM"
+                                             : "RECT";
+    char msg[80];
+    std::snprintf(msg, sizeof(msg), "%s SELECTING — release to confirm", tool);
+    text(cr, msg, kSpecX + kSpecW, kSpecY + kSpecH + 24, 11, 2,
+         kGold.r, kGold.g, kGold.b);
   } else {
     text(cr, "drag a box on the spectrogram", kSpecX + kSpecW,
          kSpecY + kSpecH + 24, 11, 2, kDim.r, kDim.g, kDim.b);
