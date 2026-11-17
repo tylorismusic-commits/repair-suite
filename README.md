@@ -33,7 +33,8 @@ Suite, Vocal Suite and Space Suite.
   transient protection, tilt and mix, sharing the same STFT pass.
 - **Spectral Repair** — capture a section, freeze, inspect the spectrogram,
   drag a time-frequency selection, then attenuate, erase, interpolate or
-  amplify it. Edits are anchored to host time and overlaid on playback.
+  amplify it. Edits are anchored to host time, overlaid on playback, and saved
+  with the session state.
 - Shared real-time STFT: 2048-sample frames, 75% overlap, identity
   reconstruction is unit-tested.
 - Total reported latency is 4221 samples (~87.9 ms at 48 kHz): 1535 for
@@ -45,7 +46,7 @@ Suite, Vocal Suite and Space Suite.
 
 ## Not implemented yet
 
-- Spectral-edit state persistence, patch/match, and precision hum.
+- Patch/match, undo/redo, and precision hum.
 - LV2 spectral capture depends on the host providing instance-access; CLAP has direct access.
 - The spectral editor (capture/select/interpolate UI) and state serialisation.
 - Preset browser UI (the preset table and LV2 preset export already exist).

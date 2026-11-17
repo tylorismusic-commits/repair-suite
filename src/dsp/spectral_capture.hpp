@@ -223,6 +223,24 @@ public:
 
   const std::vector<Edit>& edits() const noexcept { return edits_; }
 
+  // Host state thread: a consistent copy of the edit list.
+  void copyEditsForState(std::vector<Edit>* out) const {
+    if (!out) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(editMutex_);
+    *out = edits_;
+  }
+
+  void replaceEditsFromState(const std::vector<Edit>& edits) {
+    {
+      std::lock_guard<std::mutex> lock(editMutex_);
+      edits_ = edits;
+    }
+    editCount_.store(static_cast<int>(edits.size()),
+                     std::memory_order_release);
+  }
+
   void applyOverlay(float* left, float* right, int frames,
                     double blockStartTime, bool transportValid) noexcept {
     if (!left || !right || frames <= 0 ||

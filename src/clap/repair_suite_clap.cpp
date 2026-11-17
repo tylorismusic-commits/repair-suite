@@ -608,6 +608,36 @@ bool stateSave(const clap_plugin_t* p, const clap_ostream_t* stream) {
       return false;
     }
   }
+  // Spectral edits are replacement PCM keyed to host time.
+  constexpr uint32_t kEditMagic = 0x52534531u;  // "RSE1"
+  std::vector<repair::SpectralCapture::Edit> edits;
+  s->engine.capture().copyEditsForState(&edits);
+  const int32_t editCount = static_cast<int32_t>(edits.size());
+  if (stream->write(stream, &kEditMagic, sizeof(kEditMagic)) !=
+          static_cast<int64_t>(sizeof(kEditMagic)) ||
+      stream->write(stream, &editCount, sizeof(editCount)) !=
+          static_cast<int64_t>(sizeof(editCount))) {
+    return false;
+  }
+  for (const auto& edit : edits) {
+    const int32_t frames = static_cast<int32_t>(edit.left.size());
+    if (stream->write(stream, &edit.startTime, sizeof(edit.startTime)) !=
+            static_cast<int64_t>(sizeof(edit.startTime)) ||
+        stream->write(stream, &edit.endTime, sizeof(edit.endTime)) !=
+            static_cast<int64_t>(sizeof(edit.endTime)) ||
+        stream->write(stream, &frames, sizeof(frames)) !=
+            static_cast<int64_t>(sizeof(frames))) {
+      return false;
+    }
+    const size_t bytes = static_cast<size_t>(frames) * sizeof(float);
+    if (bytes > 0 &&
+        (stream->write(stream, edit.left.data(), bytes) !=
+             static_cast<int64_t>(bytes) ||
+         stream->write(stream, edit.right.data(), bytes) !=
+             static_cast<int64_t>(bytes))) {
+      return false;
+    }
+  }
   return true;
 }
 
@@ -643,6 +673,44 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
     if (stream->read(stream, profile, bytes) == static_cast<int64_t>(bytes)) {
       s->shared.setProfile(profile, bins);
     }
+  }
+  // Optional spectral-edit blob.
+  uint32_t editMagic = 0;
+  int32_t editCount = 0;
+  if (stream->read(stream, &editMagic, sizeof(editMagic)) ==
+          static_cast<int64_t>(sizeof(editMagic)) &&
+      editMagic == 0x52534531u &&
+      stream->read(stream, &editCount, sizeof(editCount)) ==
+          static_cast<int64_t>(sizeof(editCount)) &&
+      editCount >= 0 && editCount <= 256) {
+    std::vector<repair::SpectralCapture::Edit> edits;
+    edits.reserve(static_cast<size_t>(editCount));
+    for (int32_t e = 0; e < editCount; ++e) {
+      repair::SpectralCapture::Edit edit;
+      int32_t frames = 0;
+      if (stream->read(stream, &edit.startTime, sizeof(edit.startTime)) !=
+              static_cast<int64_t>(sizeof(edit.startTime)) ||
+          stream->read(stream, &edit.endTime, sizeof(edit.endTime)) !=
+              static_cast<int64_t>(sizeof(edit.endTime)) ||
+          stream->read(stream, &frames, sizeof(frames)) !=
+              static_cast<int64_t>(sizeof(frames)) ||
+          frames <= 0 || frames > 48000 * 30) {
+        edits.clear();
+        break;
+      }
+      edit.left.resize(static_cast<size_t>(frames));
+      edit.right.resize(static_cast<size_t>(frames));
+      const size_t bytes = static_cast<size_t>(frames) * sizeof(float);
+      if (stream->read(stream, edit.left.data(), bytes) !=
+              static_cast<int64_t>(bytes) ||
+          stream->read(stream, edit.right.data(), bytes) !=
+              static_cast<int64_t>(bytes)) {
+        edits.clear();
+        break;
+      }
+      edits.push_back(std::move(edit));
+    }
+    s->engine.capture().replaceEditsFromState(edits);
   }
   return true;
 }

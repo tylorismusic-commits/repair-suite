@@ -788,7 +788,8 @@ as audition-only in the first alpha.
 - [x] Timeline anchoring via CLAP transport / LV2 time; the engine overlays
   stored replacement PCM.
 - [ ] Lasso/brush selection, zoom/scroll.
-- [ ] Undo/redo and spectral-edit state blob.
+- [x] Spectral-edit state blob in CLAP and LV2 state.
+- [ ] Undo/redo.
 - [ ] Preview loop and original/processed difference display.
 - [ ] Stale-timeline warning.
 

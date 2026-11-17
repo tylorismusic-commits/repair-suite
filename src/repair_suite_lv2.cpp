@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #include "dsp/engine.hpp"
 #include "dsp/inline_display.hpp"
@@ -69,6 +70,7 @@ struct Plugin {
   uint32_t uridDouble = 0;
   uint32_t uridFrame = 0;
   uint32_t uridStateKey = 0;
+  uint32_t uridEditsKey = 0;
   uint32_t uridChunk = 0;
   double transportSeconds = 0.0;
   bool transportValid = false;
@@ -131,6 +133,7 @@ LV2_Handle instantiate(const LV2_Descriptor*, double rate, const char*,
     p->uridDouble = p->map->map(p->map->handle, LV2_ATOM__Double);
     p->uridFrame = p->map->map(p->map->handle, LV2_TIME__frame);
     p->uridStateKey = p->map->map(p->map->handle, "urn:repair-suite:noise-profile");
+    p->uridEditsKey = p->map->map(p->map->handle, "urn:repair-suite:spectral-edits");
     p->uridChunk = p->map->map(p->map->handle, LV2_ATOM__Chunk);
   }
   return p;
@@ -348,10 +351,46 @@ LV2_State_Status stateSave(LV2_Handle handle, LV2_State_Store_Function store,
   if (bins > 0) {
     std::memcpy(data + 8, profile, static_cast<size_t>(bins) * sizeof(float));
   }
-  const LV2_State_Status st = store(
+  LV2_State_Status st = store(
       state, p->uridStateKey, data, bytes, p->uridChunk,
       LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE);
   std::free(data);
+  if (st != LV2_STATE_SUCCESS) {
+    return st;
+  }
+
+  std::vector<repair::SpectralCapture::Edit> edits;
+  p->engine.capture().copyEditsForState(&edits);
+  size_t editBytes = 8;
+  for (const auto& edit : edits) {
+    editBytes += 20 + 2 * edit.left.size() * sizeof(float);
+  }
+  auto* editData = static_cast<uint8_t*>(std::malloc(editBytes));
+  if (!editData) {
+    return LV2_STATE_ERR_NO_SPACE;
+  }
+  constexpr uint32_t kEditMagic = 0x52534531u;  // "RSE1"
+  const int32_t editCountOut = static_cast<int32_t>(edits.size());
+  std::memcpy(editData, &kEditMagic, sizeof(kEditMagic));
+  std::memcpy(editData + 4, &editCountOut, sizeof(editCountOut));
+  size_t at = 8;
+  for (const auto& edit : edits) {
+    const int32_t frames = static_cast<int32_t>(edit.left.size());
+    std::memcpy(editData + at, &edit.startTime, sizeof(edit.startTime));
+    at += sizeof(edit.startTime);
+    std::memcpy(editData + at, &edit.endTime, sizeof(edit.endTime));
+    at += sizeof(edit.endTime);
+    std::memcpy(editData + at, &frames, sizeof(frames));
+    at += sizeof(frames);
+    const size_t bytes = static_cast<size_t>(frames) * sizeof(float);
+    std::memcpy(editData + at, edit.left.data(), bytes);
+    at += bytes;
+    std::memcpy(editData + at, edit.right.data(), bytes);
+    at += bytes;
+  }
+  st = store(state, p->uridEditsKey, editData, at, p->uridChunk,
+             LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE);
+  std::free(editData);
   return st;
 }
 
@@ -380,6 +419,54 @@ LV2_State_Status stateRestore(LV2_Handle handle, LV2_State_Retrieve_Function ret
   p->shared.setProfile(floats, bins);
   // The run loop consumes profilePending on the audio thread; do not touch
   // Denoise's buffers from the host state thread.
+
+  const void* editData = retrieve(state, p->uridEditsKey, &size, &type, &flags);
+  if (editData && type == p->uridChunk && size >= 8) {
+    uint32_t editMagic = 0;
+    int32_t editCount = 0;
+    std::memcpy(&editMagic, editData, sizeof(editMagic));
+    std::memcpy(&editCount, static_cast<const uint8_t*>(editData) + 4,
+                sizeof(editCount));
+    if (editMagic == 0x52534531u && editCount >= 0 && editCount <= 256) {
+      std::vector<repair::SpectralCapture::Edit> edits;
+      edits.reserve(static_cast<size_t>(editCount));
+      size_t at = 8;
+      bool ok = true;
+      for (int32_t e = 0; e < editCount; ++e) {
+        if (at + 20 > size) {
+          ok = false;
+          break;
+        }
+        repair::SpectralCapture::Edit edit;
+        int32_t frames = 0;
+        std::memcpy(&edit.startTime, static_cast<const uint8_t*>(editData) + at,
+                    sizeof(edit.startTime));
+        at += sizeof(edit.startTime);
+        std::memcpy(&edit.endTime, static_cast<const uint8_t*>(editData) + at,
+                    sizeof(edit.endTime));
+        at += sizeof(edit.endTime);
+        std::memcpy(&frames, static_cast<const uint8_t*>(editData) + at,
+                    sizeof(frames));
+        at += sizeof(frames);
+        if (frames <= 0 || frames > 48000 * 30 ||
+            at + 2 * static_cast<size_t>(frames) * sizeof(float) > size) {
+          ok = false;
+          break;
+        }
+        edit.left.resize(static_cast<size_t>(frames));
+        edit.right.resize(static_cast<size_t>(frames));
+        const size_t bytes = static_cast<size_t>(frames) * sizeof(float);
+        std::memcpy(edit.left.data(), static_cast<const uint8_t*>(editData) + at,
+                    bytes);
+        at += bytes;
+        std::memcpy(edit.right.data(), static_cast<const uint8_t*>(editData) + at,
+                    bytes);
+        at += bytes;
+        edits.push_back(std::move(edit));
+      }
+      p->engine.capture().replaceEditsFromState(edits);
+    }
+  }
   return LV2_STATE_SUCCESS;
 }
 

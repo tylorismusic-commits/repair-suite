@@ -116,6 +116,17 @@ void testCaptureOverlay() {
   cap.applyOverlay(beforeL.data(), beforeR.data(), 4800, 10.0, true);
   assert(std::fabs(beforeL[100] - 0.25f) < 1.0e-6f);
   assert(cap.editCount() == 1);
+
+  std::vector<repair::SpectralCapture::Edit> stateEdits;
+  cap.copyEditsForState(&stateEdits);
+  assert(stateEdits.size() == 1);
+  repair::SpectralCapture restoredCapture;
+  restoredCapture.prepare(kSr, 1.0f);
+  restoredCapture.replaceEditsFromState(stateEdits);
+  assert(restoredCapture.editCount() == 1);
+  std::vector<repair::SpectralCapture::Edit> restoredEdits;
+  restoredCapture.copyEditsForState(&restoredEdits);
+  assert(restoredEdits.front().left.size() == stateEdits.front().left.size());
 }
 
 
