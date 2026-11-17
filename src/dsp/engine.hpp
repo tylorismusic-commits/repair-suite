@@ -14,6 +14,7 @@
 #include <hdsp/smoother.hpp>
 
 #include "controls.hpp"
+#include "declip.hpp"
 #include "spectral_capture.hpp"
 #include "stft.hpp"
 
@@ -23,6 +24,7 @@ class Engine {
 public:
   void prepare(float sampleRate, int /*maxBlock*/ = 0) noexcept {
     sr_ = sampleRate > 0.0f ? sampleRate : 48000.0f;
+    declip_.prepare(sr_);
     stft_.prepare(sr_, 2048, 512);
     capture_.prepare(sr_, 30.0f);
     inputGain_.setTime(15.0f, sr_);
@@ -38,13 +40,15 @@ public:
     controls_ = c;
     inputGain_.setTarget(hdsp::dbToGain(c.inputDb));
     outputGain_.setTarget(hdsp::dbToGain(c.outputDb));
+    declip_.setControls(c);
     capture_.setArmed(c.captureArm);
     if (c.captureFreeze) {
       capture_.freeze();
     }
     if (c.clearCapture) {
       capture_.reset();
-      capture_.setArmed(c.captureArm);
+      declip_.setControls(c);
+    capture_.setArmed(c.captureArm);
     }
     if (c.clearEdits) {
       capture_.clearEdits();
@@ -57,6 +61,7 @@ public:
   void setTempo(float /*bpm*/, bool /*host*/) noexcept {}
 
   void reset() noexcept {
+    declip_.reset();
     stft_.reset();
     capture_.reset();
     inputGain_.reset(1.0f);
@@ -64,7 +69,7 @@ public:
   }
 
   uint32_t latencySamples() const noexcept {
-    return static_cast<uint32_t>(stft_.latencySamples());
+    return static_cast<uint32_t>(stft_.latencySamples() + declip_.latencySamples());
   }
 
   void process(float* left, float* right, int frames, Meters& meters,
@@ -85,6 +90,10 @@ public:
       left[i] *= inGain;
       right[i] *= inGain;
     }
+
+    // De-Clip runs first, directly on the input, before any filtering.  It
+    // always runs, even when bypassed, so the reported latency stays exact.
+    declip_.process(left, right, frames);
 
     // Capture is a Phase 0 placeholder at the input tap.  The production tap
     // is after De-Reverb, before Output trim.
@@ -129,6 +138,7 @@ private:
   Controls controls_;
   bool captureArmed_ = false;
   bool noiseLearn_ = false;
+  Declip declip_;
   Stft stft_;
   SpectralCapture capture_;
   hdsp::Smoothed inputGain_;

@@ -106,10 +106,65 @@ void testCaptureOverlay() {
   assert(cap.editCount() == 1);
 }
 
+
+double sdrAt(const std::vector<float>& out, const std::vector<float>& orig,
+             int delay) {
+  double sig = 0.0;
+  double err = 0.0;
+  for (int i = delay + 4096; i < static_cast<int>(out.size()); ++i) {
+    sig += static_cast<double>(orig[static_cast<size_t>(i - delay)]) *
+           orig[static_cast<size_t>(i - delay)];
+    const double e = out[static_cast<size_t>(i)] -
+                     orig[static_cast<size_t>(i - delay)];
+    err += e * e;
+  }
+  return 10.0 * std::log10(sig / (err + 1.0e-20));
+}
+
+void testDeclip() {
+  const int n = 24000;
+  std::vector<float> orig(n), clipped(n);
+  for (int i = 0; i < n; ++i) {
+    orig[i] = 0.42f * sine(i, 220.0) + 0.28f * sine(i, 440.0) +
+              0.18f * sine(i, 1330.0);
+  }
+  const float threshold = 0.45f;
+  for (int i = 0; i < n; ++i) {
+    clipped[i] = std::clamp(orig[i], -threshold, threshold);
+  }
+  const double thresholdDb = 20.0 * std::log10(threshold);
+  double sdr[3] = {};
+  for (int mode = 0; mode < 3; ++mode) {
+    repair::Engine engine;
+    engine.prepare(kSr);
+    repair::Meters meters;
+    repair::Controls c;
+    c.clipOn = true;
+    c.clipAuto = false;
+    c.clipUpperDb = static_cast<float>(thresholdDb);
+    c.clipLowerDb = static_cast<float>(thresholdDb);
+    c.clipMode = mode;
+    c.clipIterations = 12;
+    engine.setControls(c);
+    std::vector<float> l = clipped;
+    std::vector<float> r = clipped;
+    for (int start = 0; start < n; start += 256) {
+      const int len = std::min(256, n - start);
+      engine.process(l.data() + start, r.data() + start, len, meters,
+                     start / static_cast<double>(kSr), true);
+    }
+    sdr[mode] = sdrAt(l, orig, 3582);
+  }
+  std::printf("declip SDR High %.2f Balanced %.2f Fast %.2f dB\n", sdr[0],
+              sdr[1], sdr[2]);
+  assert(sdr[0] > sdr[2] + 1.0);
+  assert(sdr[0] > 12.0);
+}
+
 void testEngine() {
   repair::Engine engine;
   engine.prepare(kSr);
-  assert(engine.latencySamples() == 2047);
+  assert(engine.latencySamples() == 3582);
   repair::Meters meters;
   repair::Controls c;
   c.inputDb = 0.0f;
@@ -130,14 +185,14 @@ void testEngine() {
   }
   bool finite = true;
   double err = 0.0;
-  for (int i = 2047 + 4096; i < n; ++i) {
+  for (int i = 3582 + 4096; i < n; ++i) {
     finite = finite && std::isfinite(l[i]);
-    err += std::fabs(l[i] - inL[i - 2047]);
+    err += std::fabs(l[i] - inL[i - 3582]);
   }
   std::printf("engine finite=%d mean error %.6f\n", finite,
-              err / (n - 2047 - 4096));
+              err / (n - 3582 - 4096));
   assert(finite);
-  assert(err / (n - 2047 - 4096) < 2.0e-4);
+  assert(err / (n - 3582 - 4096) < 2.0e-4);
   assert(std::isfinite(meters.outPeakDb));
 }
 
@@ -169,6 +224,7 @@ int main() {
   testStftMask();
   testCaptureOverlay();
   testEngine();
+  testDeclip();
   testPresets();
   std::printf("DSP tests passed\n");
   return 0;

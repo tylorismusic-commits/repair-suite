@@ -16,10 +16,14 @@ Suite, Vocal Suite and Space Suite.
 - CLAP and LV2 bundles build and load in host smoke tests.
 - 48 host parameters covering the planned modules.
 - 1200×760 Cairo/Jost panel with seven pages: CLIP, CLICK, HUM, NOISE, VERB,
-  SPEC, OUT. Controls are wired to parameters; the audio chain is still an
-  identity STFT.
-- Shared real-time STFT: 2048-sample frames, 75% overlap, reported latency
-  2047 samples (~42.6 ms at 48 kHz). Identity reconstruction is unit-tested.
+  SPEC, OUT. Controls are wired to parameters.
+- **De-Clip** is the first real DSP module: flat-top detection, cubic, balanced
+  and clipping-consistent iterative STFT reconstruction, auto/manual
+  thresholds, mix and output headroom.
+- Shared real-time STFT: 2048-sample frames, 75% overlap, identity
+  reconstruction is unit-tested.
+- Total reported latency is 3582 samples (~74.6 ms at 48 kHz): 1535 for
+  De-Clip plus 2047 for the shared STFT.
 - Spectral capture prototype: rolling buffer with host-time stamps,
   timeline-anchored edit overlays and crossfades. Unit-tested; not yet wired to
   a spectral editor UI.
@@ -27,7 +31,7 @@ Suite, Vocal Suite and Space Suite.
 
 ## Not implemented yet
 
-- De-Clip, De-Click, De-Hum, De-Noise and De-Reverb DSP.
+- De-Click, De-Hum, De-Noise and De-Reverb DSP.
 - The spectral editor (capture/select/interpolate UI) and state serialisation.
 - Preset browser UI (the preset table and LV2 preset export already exist).
 - Loudness/latency status polish.

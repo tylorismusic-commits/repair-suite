@@ -14,8 +14,8 @@ Licence: GPL-3.0-or-later
 - [x] 1200×760 panel skeleton with seven pages and wired controls.
 - [x] Shared real-time STFT (2048 / 75%) with identity reconstruction tests.
 - [x] Spectral capture/overlay prototype with host-time anchors and tests.
+- [x] Wire the first real module: De-Clip (High/Balanced/Fast) into the chain.
 - [x] CLAP/LV2 UI smoke tests under Xvfb.
-- [ ] Wire the first real module (De-Clip) into the chain.
 - [ ] Add state blobs for noise profiles and spectral edits.
 - [ ] Prototype host transport in a real DAW against the capture overlay.
 
@@ -759,8 +759,9 @@ as audition-only in the first alpha.
 
 ### Phase 1 — first audible alpha (2–3 weeks)
 
-- De-Clip High (iterative, default), Balanced and Fast modes; auto threshold;
-  histogram; waveform overlay.
+- [x] De-Clip High (iterative, default), Balanced and Fast modes; auto
+  threshold; mix and output headroom.  Histogram/waveform overlay UI still to
+  come.
 - De-Click click/crackle modes with cubic/AR repair.
 - De-Hum notch + auto-tune + harmonics; precision mode stubbed behind a
   disabled control if it is not ready.

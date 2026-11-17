@@ -355,7 +355,7 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
   setRgb(cr, kEdge, 0.55);
   cairo_rectangle(cr, 24, f, kPanelWidth - 48, 1);
   cairo_fill(cr);
-  const double latencyMs = 2047.0 / 48.0;  // 2048 frame, 48 kHz
+  const double latencyMs = 3582.0 / 48.0;  // declip + STFT, 48 kHz
   char status[160];
   std::snprintf(status, sizeof(status),
                 "STFT 2048 / 75%%  ·  latency %.1f ms  ·  capture %.1f s  ·  "
