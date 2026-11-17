@@ -51,9 +51,10 @@ needed.
 
 ## Presets
 
-The header has a preset browser with the factory table (Vinyl, Dialogue,
-Podcast, Utility, Space and more), dirty-state indication and previous/next
-navigation. Presets are also exported as LV2 preset banks.
+The header has a preset browser with 24 factory presets across Vinyl,
+Dialogue, Podcast, Drums, Bass, Guitars, Mix Bus, Space, Archive and Utility,
+with dirty-state indication, scrolling and previous/next navigation. Presets
+are also exported as LV2 preset banks.
 
 ## Spectral editor
 
@@ -93,7 +94,7 @@ Installs to:
 
 - Real-world listening/tuning pass on vinyl, dialogue, drums and clipped
   material.
-- More sophisticated Match (the current version uses a spectral-shape
+- Even deeper Match/ML (the current version uses a 2D spectral-template
   similarity search and repeats the last repair).
 - ARA/standalone spectral editing, if the Linux host ecosystem makes it useful.
 

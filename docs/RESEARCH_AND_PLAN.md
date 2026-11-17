@@ -796,7 +796,7 @@ as audition-only in the first alpha.
 ### Phase 3 — completeness and release polish
 
 - [x] Patch/Copy, Repair and Amplify spectral tools.
-- [x] Basic Match (repeat the last repair at similar band events).
+- [x] 2D spectral-template Match (repeat the last repair at similar events).
 - [x] Precision hum mode.
 - [x] Auto Analyze (three-second input measurement + conservative apply).
 - CPU pass, low-latency denoise mode, state-size limits.

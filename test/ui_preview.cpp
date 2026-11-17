@@ -20,8 +20,8 @@ int main(int argc, char** argv) {
   Shared shared;
   PanelState state;
   state.tab = tab;
-  state.presetOpen = argc > 3 ? std::stoi(argv[3]) : 0;
   panel.applyPreset(shared, state, 0);
+  state.presetOpen = argc > 3 ? std::stoi(argv[3]) : 0;
   if (argc > 4 && std::stoi(argv[4]) != 0) {
     shared.compare.store(true, std::memory_order_relaxed);
   }

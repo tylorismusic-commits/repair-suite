@@ -34,6 +34,7 @@ constexpr double kPresetW = 330.0;
 constexpr double kPresetH = 36.0;
 constexpr double kListY = 56.0;
 constexpr double kListRow = 22.0;
+constexpr double kListVisible = 14.0;
 
 struct Rgb {
   double r, g, b;
@@ -952,18 +953,20 @@ void Panel::matchEdits(Shared& shared, PanelState& state) {
     return;
   }
 
-  // Normalised spectral template in the selected band.
-  std::vector<float> templ(static_cast<size_t>(rows), 0.0f);
-  for (int c = c0; c <= c1; ++c) {
-    for (int r = r0; r <= r1; ++r) {
-      templ[static_cast<size_t>(r - r0)] +=
-          std::pow(10.0, specMag_[static_cast<size_t>(r * state.specW + c)] /
-                             20.0);
-    }
-  }
+  // 2D spectral template: every selected column/row, not just an average
+  // spectrum.  Correlation is normalised, so level differences do not matter.
+  const int tw = c1 - c0 + 1;
+  std::vector<float> tmpl(static_cast<size_t>(tw) * rows, 0.0f);
   float normT = 0.0f;
-  for (float v : templ) {
-    normT += v * v;
+  for (int t = 0; t < tw; ++t) {
+    for (int r = 0; r < rows; ++r) {
+      const float v = std::pow(
+          10.0, specMag_[static_cast<size_t>((r0 + r) * state.specW +
+                                            (c0 + t))] /
+                    20.0);
+      tmpl[static_cast<size_t>(t * rows + r)] = v;
+      normT += v * v;
+    }
   }
   normT = std::sqrt(std::max(1.0e-12f, normT));
 
@@ -972,31 +975,32 @@ void Panel::matchEdits(Shared& shared, PanelState& state) {
     float score = 0.0f;
   };
   std::vector<Match> matches;
-  std::vector<float> shape(static_cast<size_t>(rows));
-  for (int c = 2; c < state.specW - 2; ++c) {
-    float normC = 0.0f;
-    float dot = 0.0f;
-    for (int r = r0; r <= r1; ++r) {
-      const float v =
-          std::pow(10.0, specMag_[static_cast<size_t>(r * state.specW + c)] /
-                             20.0);
-      shape[static_cast<size_t>(r - r0)] = v;
-      dot += v * templ[static_cast<size_t>(r - r0)];
-      normC += v * v;
+  if (tw > 0 && tw < state.specW) {
+    std::vector<float> score(static_cast<size_t>(state.specW), 0.0f);
+    for (int c = 0; c + tw <= state.specW; ++c) {
+      float dot = 0.0f;
+      float normC = 0.0f;
+      for (int t = 0; t < tw; ++t) {
+        for (int r = 0; r < rows; ++r) {
+          const float v = std::pow(
+              10.0, specMag_[static_cast<size_t>((r0 + r) * state.specW +
+                                                (c + t))] /
+                        20.0);
+          dot += v * tmpl[static_cast<size_t>(t * rows + r)];
+          normC += v * v;
+        }
+      }
+      score[static_cast<size_t>(c)] =
+          dot / (normT * std::sqrt(std::max(1.0e-12f, normC)));
     }
-    normC = std::sqrt(std::max(1.0e-12f, normC));
-    const float score = dot / (normT * normC);
-    if (score < 0.85f) {
-      continue;
+    for (int c = 2; c + tw < state.specW - 2; ++c) {
+      const float v = score[static_cast<size_t>(c)];
+      if (v < 0.88f || v < score[static_cast<size_t>(c - 1)] ||
+          v < score[static_cast<size_t>(c + 1)]) {
+        continue;
+      }
+      matches.push_back({c, v});
     }
-    // Local maximum in similarity.
-    const float prev =
-        std::pow(10.0, specMag_[static_cast<size_t>(r0 * state.specW + c - 1)] /
-                           20.0);
-    if (score < prev) {
-      continue;
-    }
-    matches.push_back({c, score});
   }
   std::sort(matches.begin(), matches.end(),
             [](const Match& a, const Match& b) { return a.score > b.score; });
@@ -1747,8 +1751,7 @@ void Panel::drawPresetList(cairo_t* cr, const Shared& shared,
   (void)shared;
   const auto& presets = factoryPresets();
   const auto& order = presetOrder();
-  const double h = 8.0 + order.size() * kListRow +
-                   presetCategoryCount() * 16.0;
+  const double h = kListVisible * kListRow + 10.0;
   roundRect(cr, kPresetX, kListY, kPresetW, h, 5);
   setRgb(cr, Rgb{0.035, 0.045, 0.052}, 0.98);
   cairo_fill(cr);
@@ -1756,24 +1759,47 @@ void Panel::drawPresetList(cairo_t* cr, const Shared& shared,
   cairo_set_line_width(cr, 1.0);
   roundRect(cr, kPresetX + 0.5, kListY + 0.5, kPresetW - 1, h - 1, 5);
   cairo_stroke(cr);
-  double y = kListY + 6;
+
+  cairo_save(cr);
+  roundRect(cr, kPresetX + 1, kListY + 1, kPresetW - 2, h - 2, 4);
+  cairo_clip(cr);
+  double y = kListY + 6 - state.presetScroll * kListRow;
   const char* lastCategory = nullptr;
   for (int i : order) {
     const auto& p = presets[static_cast<size_t>(i)];
     if (!lastCategory || std::strcmp(lastCategory, p.category) != 0) {
       lastCategory = p.category;
-      text(cr, p.category, kPresetX + 14, y + 12, 10, 0, kAccent.r, kAccent.g,
-           kAccent.b);
-      y += 16;
+      if (y + kListRow > kListY && y < kListY + h) {
+        text(cr, p.category, kPresetX + 14, y + 14, 10, 0, kAccent.r,
+             kAccent.g, kAccent.b);
+      }
+      y += kListRow;
     }
-    if (i == state.presetIndex) {
-      roundRect(cr, kPresetX + 6, y + 1, kPresetW - 12, kListRow - 2, 3);
-      setRgb(cr, kAccent, 0.22);
-      cairo_fill(cr);
+    if (y + kListRow > kListY && y < kListY + h) {
+      if (i == state.presetIndex) {
+        roundRect(cr, kPresetX + 6, y + 1, kPresetW - 12, kListRow - 2, 3);
+        setRgb(cr, kAccent, 0.22);
+        cairo_fill(cr);
+      }
+      text(cr, p.name, kPresetX + 26, y + 15, 11.5, 0, kText.r, kText.g,
+           kText.b);
     }
-    text(cr, p.name, kPresetX + 26, y + 14, 11.5, 0, kText.r, kText.g,
-         kText.b);
     y += kListRow;
+  }
+  cairo_restore(cr);
+
+  const int totalRows =
+      static_cast<int>(order.size()) + presetCategoryCount();
+  if (totalRows > static_cast<int>(kListVisible)) {
+    const double frac = kListVisible / totalRows;
+    const double barH = std::max(24.0, h * frac);
+    const double maxScroll =
+        std::max(1.0, static_cast<double>(totalRows - kListVisible));
+    const double barY =
+        kListY + 4 + (h - 8 - barH) * state.presetScroll / maxScroll;
+    setRgb(cr, kAccent, 0.35);
+    cairo_rectangle(cr, kPresetX + kPresetW - 7, barY, 3, barH);
+    cairo_fill(cr);
   }
 }
 
@@ -2227,6 +2253,15 @@ void Panel::pointerUp(Shared& shared, PanelState& state) {
 
 bool Panel::wheel(Shared& shared, PanelState& state, double x, double y,
                   double dy) {
+  if (state.presetOpen && x >= kPresetX && x <= kPresetX + kPresetW &&
+      y >= kListY && y <= kListY + kListVisible * kListRow + 10) {
+    const int totalRows =
+        static_cast<int>(presetOrder().size()) + presetCategoryCount();
+    const int maxScroll = std::max(0, totalRows - static_cast<int>(kListVisible));
+    state.presetScroll = std::clamp(
+        state.presetScroll - (dy > 0 ? 1 : -1), 0, maxScroll);
+    return true;
+  }
   if (state.tab == 5 && plotHit(x, y)) {
     const double total =
         static_cast<double>(captureL_.size()) /
@@ -2301,20 +2336,19 @@ bool Panel::handlePresetClick(Shared& shared, PanelState& state, double x,
     return false;
   }
   const auto& order = presetOrder();
-  const double h = 8.0 + order.size() * kListRow +
-                   presetCategoryCount() * 16.0;
+  const double h = kListVisible * kListRow + 10.0;
   if (x < kPresetX || x > kPresetX + kPresetW || y < kListY ||
       y > kListY + h) {
     state.presetOpen = 0;
     return true;
   }
-  double rowY = kListY + 6;
+  double rowY = kListY + 6 - state.presetScroll * kListRow;
   const char* lastCategory = nullptr;
   for (int i : order) {
     const auto& p = factoryPresets()[static_cast<size_t>(i)];
     if (!lastCategory || std::strcmp(lastCategory, p.category) != 0) {
       lastCategory = p.category;
-      rowY += 16.0;
+      rowY += kListRow;
     }
     if (y >= rowY && y < rowY + kListRow) {
       applyPreset(shared, state, i);
