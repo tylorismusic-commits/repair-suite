@@ -319,24 +319,30 @@ public:
     const double fadeSec = 0.005;
     for (int i = 0; i < frames; ++i) {
       const double t = blockStartTime + static_cast<double>(i) / sampleRate_;
-      for (const Edit& edit : edits_) {
-        if (t < edit.startTime || t >= edit.endTime) {
-          continue;
+      // Later edits win in overlaps.  This matches preview and diff playback,
+      // where the edit list is applied in insertion order.
+      const Edit* chosen = nullptr;
+      for (auto it = edits_.rbegin(); it != edits_.rend(); ++it) {
+        if (t >= it->startTime && t < it->endTime) {
+          chosen = &*it;
+          break;
         }
-        const double local = t - edit.startTime;
-        const int index = static_cast<int>(local * sampleRate_ + 0.5);
-        if (index < 0 || index >= static_cast<int>(edit.left.size())) {
-          continue;
-        }
-        const double fromStart = local;
-        const double fromEnd = edit.endTime - t;
-        const double fade =
-            std::min({1.0, fromStart / fadeSec, fromEnd / fadeSec});
-        const float g = static_cast<float>(std::clamp(fade, 0.0, 1.0));
-        left[i] += g * (edit.left[static_cast<size_t>(index)] - left[i]);
-        right[i] += g * (edit.right[static_cast<size_t>(index)] - right[i]);
-        break;
       }
+      if (!chosen) {
+        continue;
+      }
+      const double local = t - chosen->startTime;
+      const int index = static_cast<int>(local * sampleRate_ + 0.5);
+      if (index < 0 || index >= static_cast<int>(chosen->left.size())) {
+        continue;
+      }
+      const double fromStart = local;
+      const double fromEnd = chosen->endTime - t;
+      const double fade =
+          std::min({1.0, fromStart / fadeSec, fromEnd / fadeSec});
+      const float g = static_cast<float>(std::clamp(fade, 0.0, 1.0));
+      left[i] += g * (chosen->left[static_cast<size_t>(index)] - left[i]);
+      right[i] += g * (chosen->right[static_cast<size_t>(index)] - right[i]);
     }
   }
 

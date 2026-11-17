@@ -656,6 +656,9 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
   for (uint32_t i = 0; i < P_COUNT; ++i) {
     s->shared.setFromHost(i, values[i]);
   }
+  // Audition is a temporary monitor, not a mix decision; never restore a
+  // session into a state where only the removed signal is audible.
+  s->shared.set(P_AUDITION, 0.0);
   noteHostChanges(s);
   // The UI scale is optional, so states saved before it still load.
   double scale = 0.0;

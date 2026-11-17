@@ -117,13 +117,21 @@ void testCaptureOverlay() {
   assert(std::fabs(beforeL[100] - 0.25f) < 1.0e-6f);
   assert(cap.editCount() == 1);
 
+  // A later edit must win in an overlap, matching preview/diff playback.
+  std::vector<float> laterL(4800, 0.5f), laterR(4800, 0.5f);
+  assert(cap.addEdit(10.1, 10.2, laterL.data(), laterR.data(), 4800));
+  std::vector<float> overlapL(4800, 0.25f), overlapR(4800, 0.25f);
+  cap.applyOverlay(overlapL.data(), overlapR.data(), 4800, 10.1, true);
+  assert(std::fabs(overlapL[2400] - 0.5f) < 1.0e-6f);
+  assert(cap.editCount() == 2);
+
   std::vector<repair::SpectralCapture::Edit> stateEdits;
   cap.copyEditsForState(&stateEdits);
-  assert(stateEdits.size() == 1);
+  assert(stateEdits.size() == 2);
   repair::SpectralCapture restoredCapture;
   restoredCapture.prepare(kSr, 1.0f);
   restoredCapture.replaceEditsFromState(stateEdits);
-  assert(restoredCapture.editCount() == 1);
+  assert(restoredCapture.editCount() == 2);
   std::vector<repair::SpectralCapture::Edit> restoredEdits;
   restoredCapture.copyEditsForState(&restoredEdits);
   assert(restoredEdits.front().left.size() == stateEdits.front().left.size());
@@ -705,6 +713,70 @@ void testDeltaAndDc() {
   assert(std::fabs(20.0 * std::log10(highOut / highIn)) < 0.5);
 }
 
+
+void testStageAuditionAlignment() {
+  const int n = 32000;
+  std::vector<float> clean(n);
+  for (int i = 0; i < n; ++i) {
+    clean[i] = 0.2f * sine(i, 220.0);
+  }
+  repair::Controls c;
+  c.clipOn = true;
+  c.clipAuto = true;
+  c.clickOn = false;
+  c.humOn = false;
+  c.noiseOn = false;
+  c.verbOn = false;
+  c.specOn = false;
+  c.dcOn = false;
+  c.delta = false;
+  c.audition = 0;
+  repair::Engine engine;
+  engine.prepare(kSr);
+  engine.setControls(c);
+  repair::Meters meters;
+  std::vector<float> l = clean;
+  std::vector<float> r = clean;
+  for (int start = 0; start < n; start += 256) {
+    const int len = std::min(256, n - start);
+    engine.process(l.data() + start, r.data() + start, len, meters,
+                   start / static_cast<double>(kSr), true);
+  }
+  double err = 0.0;
+  const int first = 10000;
+  for (int i = first; i < n; ++i) {
+    err += static_cast<double>(l[static_cast<size_t>(i)]) *
+           l[static_cast<size_t>(i)];
+  }
+  err = std::sqrt(err / (n - first));
+  std::printf("clip audition residual %.6f\n", err);
+  assert(err < 2.0e-3);
+
+  // The same delay alignment applies to the De-Click stage.
+  repair::Controls click = c;
+  click.clipOn = false;
+  click.clickOn = true;
+  click.audition = 1;
+  repair::Engine clickEngine;
+  clickEngine.prepare(kSr);
+  clickEngine.setControls(click);
+  l = clean;
+  r = clean;
+  for (int start = 0; start < n; start += 256) {
+    const int len = std::min(256, n - start);
+    clickEngine.process(l.data() + start, r.data() + start, len, meters,
+                        start / static_cast<double>(kSr), true);
+  }
+  err = 0.0;
+  for (int i = first; i < n; ++i) {
+    err += static_cast<double>(l[static_cast<size_t>(i)]) *
+           l[static_cast<size_t>(i)];
+  }
+  err = std::sqrt(err / (n - first));
+  std::printf("click audition residual %.6f\n", err);
+  assert(err < 3.0e-3);
+}
+
 void testAnalysis() {
   repair::Engine engine;
   engine.prepare(kSr);
@@ -797,6 +869,7 @@ int main() {
   testProfilePersistence();
   testAnalysis();
   testDeltaAndDc();
+  testStageAuditionAlignment();
   testFrameSizes();
   testPresets();
   std::printf("DSP tests passed\n");

@@ -40,7 +40,7 @@ constexpr double kMonX = 56.0;
 constexpr double kMonY = 122.0;
 constexpr double kMonH = 28.0;
 constexpr double kMonSegW = 88.0;
-constexpr double kMonABX = kMonX + 3 * kMonSegW + 14.0;
+constexpr double kMonABX = kMonX + 66.0 + 3 * kMonSegW + 8.0;
 constexpr double kMonABW = 58.0;
 constexpr double kAnalysisRowY = 252.0;
 constexpr double kAnalysisRowH = 30.0;
@@ -530,8 +530,7 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
       addKnob(P_INPUT, x0, 350, 56);
       addKnob(P_OUTPUT, x0 + step, 350, 56);
       addKnob(P_DC_FREQ, x0 + 2 * step, 350, 56);
-      addToggle(P_DELTA, 140, 160, 120, 40, "DELTA");
-      addToggle(P_DC_ON, 280, 160, 150, 40, "DC FILTER");
+      addToggle(P_DC_ON, 140, 160, 150, 40, "DC FILTER");
       addButton(460, 160, 130, 40, "ANALYZE", 20);
       addButton(610, 160, 130, 40, "APPLY", 21);
       break;
@@ -539,9 +538,11 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
   if (state.tab != 5) {
     addButton(902, 160, 80, 40, "RESET", 60);
     addButton(990, 160, 96, 40, "PRESET", 70);
-    static const char* kAuditionLabelsShort[7] = {
-        "DELTA", "DELTA", "SOLO HUM", "RESIDUAL", "SOLO VERB", "DELTA", "DELTA"};
-    addButton(1090, 160, 84, 40, kAuditionLabelsShort[state.tab], 80);
+    if (state.tab != 6) {
+      static const char* kAuditionLabelsShort[6] = {
+          "DELTA", "DELTA", "SOLO HUM", "RESIDUAL", "SOLO VERB", "DELTA"};
+      addButton(1090, 160, 84, 40, kAuditionLabelsShort[state.tab], 80);
+    }
   } else {
     addButton(790, 650, 120, 38, "RESET", 60);
     addButton(918, 650, 120, 38, "PRESET", 70);
@@ -1536,10 +1537,15 @@ void Panel::drawStageVisual(cairo_t* cr, const Shared& shared,
       std::snprintf(t, sizeof(t), "%s %+.1f", name, db);
       text(cr, t, x + w - 18, ty - 4, 9, 2, color.r, color.g, color.b);
     };
-    handle(shared.get(P_CLIP_UPPER), kGold, "UP");
-    handle(shared.get(P_CLIP_LOWER), kAmber, "LO");
+    const double clipUpper = shared.get(P_CLIP_UPPER);
+    const double clipLower = shared.get(P_CLIP_LOWER);
+    const bool sameThreshold = std::fabs(clipUpper - clipLower) < 0.05;
+    handle(clipUpper, kGold, sameThreshold ? "CLIP" : "UP");
+    if (!sameThreshold) {
+      handle(clipLower, kAmber, "LO");
+    }
     std::snprintf(label, sizeof(label),
-                  "clip %.2f%%   restored peak %.1f dB   %s",
+                  "clip %.2f%%   target peak %.1f dB   %s",
                   shared.analysisClipPct.load(std::memory_order_relaxed),
                   state.clipRestoredPeakDb,
                   state.clipHistory[latest] > 0.5f ? "DETECTED" : "CLEAR");
@@ -1603,10 +1609,10 @@ void Panel::drawStageVisual(cairo_t* cr, const Shared& shared,
     }
     const uint64_t mask = shared.humMask.load(std::memory_order_relaxed);
     for (int idx = 0; idx < harmonics; ++idx) {
-      const int col = idx / 6;
-      const int row = idx % 6;
-      const double bx = x + 300 + col * 198.0;
-      const double by = y + 38 + row * 22.0;
+      const int col = idx / 8;
+      const int row = idx % 8;
+      const double bx = x + 300 + col * 190.0;
+      const double by = y + 34 + row * 16.0;
       const bool on = ((mask >> idx) & 1ull) != 0;
       roundRect(cr, bx, by, 12, 12, 2);
       setRgb(cr, on ? kAccent : Rgb{0.05, 0.07, 0.08});
@@ -1617,7 +1623,7 @@ void Panel::drawStageVisual(cairo_t* cr, const Shared& shared,
       cairo_stroke(cr);
       std::snprintf(label, sizeof(label), "%2d  %6.1f Hz", idx + 1,
                     static_cast<double>(hz) * (idx + 1));
-      text(cr, label, bx + 18, by + 10, 9.5, 0, on ? kText.r : kDim.r,
+      text(cr, label, bx + 18, by + 10, 8.5, 0, on ? kText.r : kDim.r,
            on ? kText.g : kDim.g, on ? kText.b : kDim.b);
     }
     std::snprintf(label, sizeof(label),
@@ -1629,15 +1635,17 @@ void Panel::drawStageVisual(cairo_t* cr, const Shared& shared,
          kDim.r, kDim.g, kDim.b);
     float profile[64] = {};
     const int bins = shared.profileBins.load(std::memory_order_relaxed);
+    const int validBins = std::clamp(bins, 0, repair::kProfileBins);
     const int total = shared.profileValid.load(std::memory_order_relaxed)
-                          ? std::min(bins, 64)
+                          ? std::min(validBins, 64)
                           : 0;
     if (total > 0) {
       for (int i = 0; i < total; ++i) {
-        profile[i] = shared.noiseProfile[static_cast<size_t>(
-            std::min(repair::kProfileBins - 1,
-                     i * (repair::kProfileBins - 1) / std::max(1, total - 1)))]
-                         .load(std::memory_order_relaxed);
+        const int at = std::min(
+            validBins - 1,
+            i * (validBins - 1) / std::max(1, total - 1));
+        profile[i] = shared.noiseProfile[static_cast<size_t>(at)].load(
+            std::memory_order_relaxed);
       }
       auto curve = [&](float offsetDb, Rgb color, bool fill) {
         cairo_new_path(cr);
@@ -1674,7 +1682,7 @@ void Panel::drawStageVisual(cairo_t* cr, const Shared& shared,
                   "%.1f dB   profile %s   %d bins", state.noiseHistory[latest],
                   shared.profileValid.load(std::memory_order_relaxed) ? "ready"
                                                                      : "not learned",
-                  total);
+                  validBins);
     text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
   } else if (page == 4) {
     text(cr, "REVERB TAIL REDUCTION", x + 14, y + 18, 10, 0,
@@ -1856,16 +1864,16 @@ bool Panel::clipHistogramHit(const Shared& shared, double x, double y,
 bool Panel::humTableHit(const PanelState& state, double x, double y,
                         int* harmonic) const {
   (void)state;
-  if (x < 356 || x > 1144 || y < 458 || y > 594) {
+  if (x < 356 || x > 926 || y < 454 || y > 586) {
     return false;
   }
-  const int col = static_cast<int>((x - 356) / 198.0);
-  const int row = static_cast<int>((y - 458) / 22.0);
-  if (col < 0 || col > 3 || row < 0 || row > 5) {
+  const int col = static_cast<int>((x - 356) / 190.0);
+  const int row = static_cast<int>((y - 454) / 16.0);
+  if (col < 0 || col > 2 || row < 0 || row > 7) {
     return false;
   }
   if (harmonic) {
-    *harmonic = col * 6 + row;
+    *harmonic = col * 8 + row;
   }
   return true;
 }
@@ -2259,11 +2267,13 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
   const double latencyMs = latencySamples > 0
                                ? static_cast<double>(latencySamples) / sr * 1000.0
                                : 0.0;
+  const int stftFrame = 512 << std::clamp(
+      static_cast<int>(shared.get(P_NOISE_FRAME) + 0.5), 0, 3);
   char status[160];
   std::snprintf(status, sizeof(status),
-                "STFT 2048 / 75%%  ·  latency %.1f ms  ·  capture %.1f s  ·  "
+                "STFT %d / 75%%  ·  latency %.1f ms  ·  capture %.1f s  ·  "
                 "edits %d",
-                latencyMs, state.captureSeconds, state.editCount);
+                stftFrame, latencyMs, state.captureSeconds, state.editCount);
   text(cr, status, 44, f + 28, 12, 0, kDim.r, kDim.g, kDim.b);
   if (state.transportValid) {
     char t[64];

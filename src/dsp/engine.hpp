@@ -47,6 +47,9 @@ public:
       f.reset();
     }
     updateDryDelay();
+    stageDelay_[0].prepare(static_cast<int>(declip_.latencySamples()));
+    stageDelay_[1].prepare(static_cast<int>(declick_.latencySamples()));
+    stageDelay_[2].prepare(0);
     dryBlockL_.assign(16384, 0.0f);
     dryBlockR_.assign(16384, 0.0f);
     stageL_.assign(16384, 0.0f);
@@ -72,6 +75,11 @@ public:
       stft_.prepare(sr_, frame, frame / 4);
       denoise_.retune(sr_, stft_.bins(), stft_.hopSize());
       dereverb_.prepare(sr_, stft_.bins(), stft_.hopSize());
+      const size_t bins = static_cast<size_t>(stft_.bins());
+      stftDryReL_.assign(bins, 0.0f);
+      stftDryImL_.assign(bins, 0.0f);
+      stftDryReR_.assign(bins, 0.0f);
+      stftDryImR_.assign(bins, 0.0f);
       updateDryDelay();
     }
     declip_.setControls(c);
@@ -112,6 +120,9 @@ public:
       f.reset();
     }
     updateDryDelay();
+    for (auto& d : stageDelay_) {
+      d.reset();
+    }
     dryBlockL_.assign(16384, 0.0f);
     dryBlockR_.assign(16384, 0.0f);
   }
@@ -169,10 +180,13 @@ public:
 
     // De-Clip runs first, directly on the input, before any filtering.  It
     // always runs, even when bypassed, so the reported latency stays exact.
-    copyStageInput();
+    stageDelay_[0].push(left, right, frames);
     declip_.process(left, right, frames);
     if (controls_.audition == 0) {
-      makeStageDifference();
+      for (int i = 0; i < frames; ++i) {
+        left[i] -= stageDelay_[0].delayedLeft(i, frames);
+        right[i] -= stageDelay_[0].delayedRight(i, frames);
+      }
     }
 
     // DC / rumble filter, after De-Clip and before the detectors.
@@ -184,17 +198,23 @@ public:
     }
 
     // De-Click runs next, before hum and broadband cleanup.
-    copyStageInput();
+    stageDelay_[1].push(left, right, frames);
     declick_.process(left, right, frames);
     if (controls_.audition == 1) {
-      makeStageDifference();
+      for (int i = 0; i < frames; ++i) {
+        left[i] -= stageDelay_[1].delayedLeft(i, frames);
+        right[i] -= stageDelay_[1].delayedRight(i, frames);
+      }
     }
 
     // De-Hum is zero latency, so it does not add to the reported total.
-    copyStageInput();
+    stageDelay_[2].push(left, right, frames);
     dehum_.process(left, right, frames);
     if (controls_.audition == 2) {
-      makeStageDifference();
+      for (int i = 0; i < frames; ++i) {
+        left[i] -= stageDelay_[2].delayedLeft(i, frames);
+        right[i] -= stageDelay_[2].delayedRight(i, frames);
+      }
     }
 
     // De-Noise and De-Reverb share the STFT pass.
@@ -338,6 +358,55 @@ public:
   }
 
 private:
+  struct StageDelay {
+    std::vector<float> left, right;
+    int latency = 0;
+    int write = 0;
+
+    void prepare(int samples) noexcept {
+      latency = std::max(0, samples);
+      // Keep a full max block of live samples plus the module delay, so a
+      // block read never wraps into the samples just written for it.
+      constexpr int kMaxBlock = 16384;
+      left.assign(static_cast<size_t>(latency + kMaxBlock + 1), 0.0f);
+      right.assign(static_cast<size_t>(latency + kMaxBlock + 1), 0.0f);
+      write = 0;
+    }
+
+    void reset() noexcept {
+      std::fill(left.begin(), left.end(), 0.0f);
+      std::fill(right.begin(), right.end(), 0.0f);
+      write = 0;
+    }
+
+    void push(const float* l, const float* r, int frames) noexcept {
+      const int size = static_cast<int>(left.size());
+      for (int i = 0; i < frames; ++i) {
+        left[static_cast<size_t>(write)] = l[i];
+        right[static_cast<size_t>(write)] = r[i];
+        write = (write + 1) % size;
+      }
+    }
+
+    float delayedLeft(int i, int frames) const noexcept {
+      const int size = static_cast<int>(left.size());
+      int at = (write - frames + i - latency) % size;
+      if (at < 0) {
+        at += size;
+      }
+      return left[static_cast<size_t>(at)];
+    }
+
+    float delayedRight(int i, int frames) const noexcept {
+      const int size = static_cast<int>(right.size());
+      int at = (write - frames + i - latency) % size;
+      if (at < 0) {
+        at += size;
+      }
+      return right[static_cast<size_t>(at)];
+    }
+  };
+
   void updateDryDelay() noexcept {
     dryLatency_ = static_cast<int>(latencySamples());
     drySize_ = dryLatency_ + 1;
@@ -363,6 +432,7 @@ private:
   int drySize_ = 1;
   std::vector<float> dryL_, dryR_;
   std::vector<float> dryBlockL_, dryBlockR_;
+  StageDelay stageDelay_[3];
   std::vector<float> stageL_, stageR_;
   std::vector<float> stftDryReL_, stftDryImL_, stftDryReR_, stftDryImR_;
   int dryWrite_ = 0;

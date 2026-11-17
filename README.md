@@ -53,10 +53,10 @@ needed.
 
 ## Presets
 
-The header has a preset browser with 24 factory presets across Vinyl,
-Dialogue, Podcast, Drums, Bass, Guitars, Mix Bus, Space, Archive and Utility,
-with dirty-state indication, scrolling and previous/next navigation. Presets
-are also exported as LV2 preset banks.
+The header has a preset browser with 28 factory presets across Vinyl,
+Dialogue, Podcast, Drums, Bass, Guitars, Mix Bus, Space, Archive, Stems and
+Utility, with dirty-state indication, scrolling and previous/next navigation.
+Presets are also exported as LV2 preset banks.
 
 ## Spectral editor
 
