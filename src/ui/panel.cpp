@@ -2454,11 +2454,20 @@ void Panel::drawWidget(cairo_t* cr, const Widget& w, const Shared& shared,
       drawChoice(cr, w, static_cast<int>(shared.get(w.param) + 0.5));
       break;
     case Kind::Button: {
-      const bool active =
+      bool active =
           (w.action == 1 &&
            shared.captureActive.load(std::memory_order_relaxed)) ||
           (w.action >= 80 && w.action <= 86 &&
            std::fabs(shared.get(P_AUDITION) - (w.action - 79)) < 0.5);
+      if (w.action >= 10 && w.action <= 12) {
+        active = state.specTool == w.action - 10;
+      } else if (w.action == 22) {
+        active = state.specTool == 3;
+      } else if (w.action == 17) {
+        active = state.diffMode;
+      } else if (w.action == 18) {
+        active = state.previewMode;
+      }
       roundRect(cr, w.x, w.y, w.w, w.h, 5);
       setRgb(cr, active ? kAccent : kPanelLight);
       cairo_fill(cr);
