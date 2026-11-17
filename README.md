@@ -22,6 +22,11 @@ Suite, Vocal Suite and Space Suite.
   headroom.
 - **De-Click** — median-residual click/crackle detection, stereo-linked repair
   by cubic Hermite interpolation, sensitivity/width/mix controls.
+- **De-Hum** — narrow notch bank with automatic 50/60 Hz harmonic detection,
+  odd-only, depth and mix.
+- **De-Noise** — STFT spectral subtraction with a two-second learned noise
+  profile, transient hold, smoothing, reduction and mix. Adaptive mode is
+  scaffolded.
 - Shared real-time STFT: 2048-sample frames, 75% overlap, identity
   reconstruction is unit-tested.
 - Total reported latency is 4221 samples (~87.9 ms at 48 kHz): 1535 for
@@ -33,7 +38,7 @@ Suite, Vocal Suite and Space Suite.
 
 ## Not implemented yet
 
-- De-Hum, De-Noise and De-Reverb DSP.
+- De-Reverb DSP and the spectral editor.
 - The spectral editor (capture/select/interpolate UI) and state serialisation.
 - Preset browser UI (the preset table and LV2 preset export already exist).
 - Loudness/latency status polish.

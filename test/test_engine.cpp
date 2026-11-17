@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "dsp/declick.hpp"
+#include "dsp/dehum.hpp"
+#include "dsp/denoise.hpp"
 #include "dsp/engine.hpp"
 #include "dsp/spectral_capture.hpp"
 #include "dsp/stft.hpp"
@@ -19,6 +21,14 @@ constexpr double kPi = 3.14159265358979323846;
 
 float sine(int n, double hz, float amp = 1.0f) {
   return amp * static_cast<float>(std::sin(2.0 * kPi * hz * n / kSr));
+}
+
+double rmsRange(const std::vector<float>& x, int start, int count) {
+  double sum = 0.0;
+  for (int i = start; i < start + count; ++i) {
+    sum += static_cast<double>(x[i]) * x[i];
+  }
+  return std::sqrt(sum / std::max(1, count));
 }
 
 void testStftIdentity() {
@@ -242,6 +252,145 @@ void testDeclick() {
                    clean[static_cast<size_t>(at - latency)]) < 1.0e-5f);
 }
 
+
+double toneMag(const std::vector<float>& x, float hz, int start, int count) {
+  double re = 0.0;
+  double im = 0.0;
+  for (int i = 0; i < count; ++i) {
+    const double phase = 2.0 * kPi * hz * (start + i) / kSr;
+    re += x[static_cast<size_t>(start + i)] * std::cos(phase);
+    im -= x[static_cast<size_t>(start + i)] * std::sin(phase);
+  }
+  return std::sqrt(re * re + im * im) / (0.5 * count);
+}
+
+void testDehum() {
+  const int n = 96000;
+  std::vector<float> in(n), l, r;
+  for (int i = 0; i < n; ++i) {
+    in[i] = 0.30f * sine(i, 50.0) + 0.20f * sine(i, 150.0) +
+            0.15f * sine(i, 250.0) + 0.20f * sine(i, 1000.0);
+  }
+  repair::Dehum dehum;
+  dehum.prepare(kSr);
+  repair::Controls c;
+  c.humOn = true;
+  c.humAuto = false;
+  c.humHz = 50.0f;
+  c.humHarmonics = 5;
+  c.humDepthDb = 60.0f;
+  c.humMix = 100.0f;
+  dehum.setControls(c);
+  l = in;
+  r = in;
+  dehum.process(l.data(), r.data(), n);
+  const int start = 48000;
+  const int count = 24000;
+  const double humIn = toneMag(in, 50.0f, start, count);
+  const double humOut = toneMag(l, 50.0f, start, count);
+  const double wantedIn = toneMag(in, 1000.0f, start, count);
+  const double wantedOut = toneMag(l, 1000.0f, start, count);
+  std::printf("dehum 50 Hz %.1f dB, 1 kHz %.2f dB\n",
+              20.0 * std::log10(humOut / humIn),
+              20.0 * std::log10(wantedOut / wantedIn));
+  assert(20.0 * std::log10(humOut / humIn) < -20.0);
+  assert(std::fabs(20.0 * std::log10(wantedOut / wantedIn)) < 0.5);
+
+  // Auto tune finds 60 Hz and rejects a clean signal as "no hum".
+  std::vector<float> hum(n);
+  for (int i = 0; i < n; ++i) {
+    hum[i] = 0.3f * sine(i, 60.0) + 0.2f * sine(i, 180.0);
+  }
+  repair::Dehum autoDehum;
+  autoDehum.prepare(kSr);
+  c.humAuto = true;
+  autoDehum.setControls(c);
+  std::vector<float> al = hum;
+  std::vector<float> ar = hum;
+  autoDehum.process(al.data(), ar.data(), n);
+  assert(std::fabs(autoDehum.detectedHz() - 60.0f) < 0.5f);
+  const double hIn = toneMag(hum, 60.0f, 64000, 24000);
+  const double hOut = toneMag(al, 60.0f, 64000, 24000);
+  assert(20.0 * std::log10(hOut / hIn) < -20.0);
+}
+
+
+void testDenoise() {
+  const int n = 5 * static_cast<int>(kSr);
+  auto noise = [](uint32_t& state) {
+    state = state * 1664525u + 1013904223u;
+    return static_cast<float>(static_cast<int32_t>(state >> 8)) / 8388608.0f;
+  };
+  repair::Stft stft;
+  stft.prepare(kSr, 2048, 512);
+  repair::Denoise denoise;
+  denoise.prepare(kSr, stft.bins(), stft.hopSize());
+  repair::Controls c;
+  c.noiseOn = true;
+  c.noiseReductionDb = 24.0f;
+  c.noiseSmoothing = 5.0f;
+  c.noiseTransient = 5.0f;
+  c.noiseMix = 100.0f;
+  c.noiseLearn = true;
+  denoise.setControls(c);
+
+  uint32_t seed = 1;
+  std::vector<float> l(n), r(n);
+  for (int i = 0; i < n; ++i) {
+    l[i] = r[i] = 0.05f * noise(seed);
+  }
+  for (int start = 0; start < n; start += 512) {
+    const int len = std::min(512, n - start);
+    stft.process(l.data() + start, r.data() + start, len,
+                 [&](float* reL, float* imL, float* reR, float* imR, int bins) {
+                   denoise.processBins(reL, imL, reR, imR, bins);
+                 });
+  }
+  assert(denoise.learned());
+  c.noiseLearn = false;
+  denoise.setControls(c);
+
+  seed = 2;
+  std::vector<float> nl(n), nr(n), orig(n);
+  for (int i = 0; i < n; ++i) {
+    orig[i] = 0.05f * noise(seed);
+    nl[i] = nr[i] = orig[i];
+  }
+  for (int start = 0; start < n; start += 512) {
+    const int len = std::min(512, n - start);
+    stft.process(nl.data() + start, nr.data() + start, len,
+                 [&](float* reL, float* imL, float* reR, float* imR, int bins) {
+                   denoise.processBins(reL, imL, reR, imR, bins);
+                 });
+  }
+  const int start = 3 * static_cast<int>(kSr);
+  const int count = static_cast<int>(kSr);
+  const double inRms = rmsRange(orig, start, count);
+  const double outRms = rmsRange(nl, start, count);
+  std::printf("denoise noise %.4f -> %.4f (%.1f dB)\n", inRms, outRms,
+              20.0 * std::log10(outRms / inRms));
+  assert(outRms < inRms * 0.5);
+
+  // A wanted tone survives the learned noise profile.
+  seed = 3;
+  std::vector<float> tl(n), tr(n), tone(n);
+  for (int i = 0; i < n; ++i) {
+    tone[i] = 0.2f * sine(i, 1000.0);
+    tl[i] = tr[i] = tone[i] + 0.05f * noise(seed);
+  }
+  for (int startBlock = 0; startBlock < n; startBlock += 512) {
+    const int len = std::min(512, n - startBlock);
+    stft.process(tl.data() + startBlock, tr.data() + startBlock, len,
+                 [&](float* reL, float* imL, float* reR, float* imR, int bins) {
+                   denoise.processBins(reL, imL, reR, imR, bins);
+                 });
+  }
+  const double toneIn = toneMag(tone, 1000.0f, start, count);
+  const double toneOut = toneMag(tl, 1000.0f, start, count);
+  std::printf("denoise tone %.4f -> %.4f\n", toneIn, toneOut);
+  assert(std::fabs(20.0 * std::log10(toneOut / toneIn)) < 1.0);
+}
+
 void testPresets() {
   for (const repair::Preset& p : repair::factoryPresets()) {
     repair::Shared s;
@@ -272,6 +421,8 @@ int main() {
   testEngine();
   testDeclip();
   testDeclick();
+  testDehum();
+  testDenoise();
   testPresets();
   std::printf("DSP tests passed\n");
   return 0;

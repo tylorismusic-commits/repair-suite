@@ -14,7 +14,7 @@ Licence: GPL-3.0-or-later
 - [x] 1200×760 panel skeleton with seven pages and wired controls.
 - [x] Shared real-time STFT (2048 / 75%) with identity reconstruction tests.
 - [x] Spectral capture/overlay prototype with host-time anchors and tests.
-- [x] Wire De-Clip (High/Balanced/Fast) and De-Click into the chain.
+- [x] Wire De-Clip, De-Click, De-Hum and De-Noise into the chain.
 - [x] CLAP/LV2 UI smoke tests under Xvfb.
 - [ ] Add state blobs for noise profiles and spectral edits.
 - [ ] Prototype host transport in a real DAW against the capture overlay.
@@ -764,9 +764,10 @@ as audition-only in the first alpha.
   come.
 - [x] De-Click click/crackle detection with median-residual detection and
   cubic repair.  AR repair and thump/dropout modes still to come.
-- De-Hum notch + auto-tune + harmonics; precision mode stubbed behind a
-  disabled control if it is not ready.
-- De-Noise learn + adaptive + Wiener/MMSE gain + transient protection.
+- [x] De-Hum notch + automatic 50/60 Hz harmonic scoring.  Precision
+  re-synthesis mode is still scaffolded.
+- [x] De-Noise learn + spectral subtraction + transient hold.  Adaptive
+  profile tracking and tonal split still to come.
 - De-Reverb spectral late-tail reduction sharing the De-Noise STFT.
 - Chain, per-stage bypass/mix, meters, Delta, typed values, presets v1.
 - UI pages and live spectrum. Spectrogram page present but read-only.

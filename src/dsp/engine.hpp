@@ -16,6 +16,8 @@
 #include "controls.hpp"
 #include "declip.hpp"
 #include "declick.hpp"
+#include "dehum.hpp"
+#include "denoise.hpp"
 #include "spectral_capture.hpp"
 #include "stft.hpp"
 
@@ -27,7 +29,9 @@ public:
     sr_ = sampleRate > 0.0f ? sampleRate : 48000.0f;
     declip_.prepare(sr_);
     declick_.prepare(sr_);
+    dehum_.prepare(sr_);
     stft_.prepare(sr_, 2048, 512);
+    denoise_.prepare(sr_, stft_.bins(), stft_.hopSize());
     capture_.prepare(sr_, 30.0f);
     inputGain_.setTime(15.0f, sr_);
     outputGain_.setTime(15.0f, sr_);
@@ -44,6 +48,8 @@ public:
     outputGain_.setTarget(hdsp::dbToGain(c.outputDb));
     declip_.setControls(c);
     declick_.setControls(c);
+    dehum_.setControls(c);
+    denoise_.setControls(c);
     capture_.setArmed(c.captureArm);
     if (c.captureFreeze) {
       capture_.freeze();
@@ -52,6 +58,8 @@ public:
       capture_.reset();
       declip_.setControls(c);
     declick_.setControls(c);
+    dehum_.setControls(c);
+    denoise_.setControls(c);
     capture_.setArmed(c.captureArm);
     }
     if (c.clearEdits) {
@@ -67,6 +75,8 @@ public:
   void reset() noexcept {
     declip_.reset();
     declick_.reset();
+    dehum_.reset();
+    denoise_.reset();
     stft_.reset();
     capture_.reset();
     inputGain_.reset(1.0f);
@@ -105,14 +115,21 @@ public:
     // De-Click runs next, before hum and broadband cleanup.
     declick_.process(left, right, frames);
 
+    // De-Hum is zero latency, so it does not add to the reported total.
+    dehum_.process(left, right, frames);
+
     // Capture is a Phase 0 placeholder at the input tap.  The production tap
     // is after De-Reverb, before Output trim.
     capture_.push(left, right, frames, hostTime, hostTimeValid);
     capture_.applyOverlay(left, right, frames, hostTime, hostTimeValid);
 
-    // The scaffold chain is an identity STFT.  Modules will be inserted here;
-    // running it now locks in latency reporting and reconstruction tests.
-    stft_.process(left, right, frames);
+    // De-Noise shares the STFT pass.  De-Reverb and the spectral editor will
+    // multiply their gains into the same bins later.
+    stft_.process(left, right, frames,
+                  [this](float* reL, float* imL, float* reR, float* imR,
+                         int bins) {
+                    denoise_.processBins(reL, imL, reR, imR, bins);
+                  });
 
     const float outGain = outputGain_.next();
     for (int i = 0; i < frames; ++i) {
@@ -129,7 +146,7 @@ public:
     meters.outPeakLDb = meters.outPeakDb;
     meters.outPeakRDb = meters.outPeakDb;
     meters.grDb = 0.0f;
-    meters.noiseGrDb = 0.0f;
+    meters.noiseGrDb = denoise_.lastReductionDb();
     meters.verbGrDb = 0.0f;
     meters.specActive = capture_.editCount() > 0 ? 1.0f : 0.0f;
     meters.noiseFloorDb = meters.inPeakDb;
@@ -150,6 +167,8 @@ private:
   bool noiseLearn_ = false;
   Declip declip_;
   Declick declick_;
+  Dehum dehum_;
+  Denoise denoise_;
   Stft stft_;
   SpectralCapture capture_;
   hdsp::Smoothed inputGain_;
