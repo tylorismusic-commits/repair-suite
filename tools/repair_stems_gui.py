@@ -12,6 +12,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QProcess, QSettings, Qt, QUrl
@@ -38,6 +40,10 @@ from PySide6.QtWidgets import (
 )
 
 APP_NAME = "Repair Suite Stems"
+STATE_DIR = Path(
+    os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state"))
+) / "repair-suite"
+LOG_PATH = STATE_DIR / "stems.log"
 AUDIO_FILTER = (
     "Audio files (*.wav *.flac *.mp3 *.ogg *.m4a *.aiff *.aif);;"
     "WAV files (*.wav);;All files (*)"
@@ -50,6 +56,32 @@ DEMUCS_MODELS = [
     "mdx_extra",
     "mdx_extra_q",
 ]
+
+
+def log_line(message: str) -> None:
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with LOG_PATH.open("a", encoding="utf-8") as log:
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S")
+            log.write(f"[{stamp}] {message}\n")
+    except OSError:
+        pass
+
+
+def report_startup_failure(exc: BaseException) -> None:
+    detail = "".join(traceback.format_exception(exc))
+    log_line("startup failure:\n" + detail)
+    message = (
+        "Repair Suite Stems could not start.\n\n"
+        f"{exc}\n\nLog: {LOG_PATH}"
+    )
+    # A desktop launch has no terminal, so surface the error if possible.
+    zenity = shutil.which("zenity")
+    if zenity and not os.environ.get("REPAIR_STEMS_NO_DIALOG"):
+        subprocess.run([zenity, "--error", "--title", APP_NAME,
+                        "--text", message], check=False)
+    else:
+        print(message, file=sys.stderr)
 
 
 def companion_path() -> Path | None:
@@ -608,6 +640,11 @@ def main() -> int:
     )
     args = parser.parse_args()
     os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "1")
+    log_line(
+        f"starting: display={os.environ.get('DISPLAY', '')!r} "
+        f"wayland={os.environ.get('WAYLAND_DISPLAY', '')!r} "
+        f"python={sys.executable} companion={companion_path()}"
+    )
     app = QApplication(sys.argv[:1])
     app.setApplicationName(APP_NAME)
     set_palette(app)
@@ -627,8 +664,20 @@ def main() -> int:
         window.close()
         return 0
     window.show()
+    window.raise_()
+    window.activateWindow()
+    log_line(
+        f"window shown: visible={window.isVisible()} "
+        f"geometry={window.geometry().getRect()}"
+    )
     return app.exec()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except BaseException as exc:  # noqa: BLE001 - last-resort desktop error
+        report_startup_failure(exc)
+        raise

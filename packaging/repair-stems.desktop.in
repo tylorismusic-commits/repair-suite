@@ -2,8 +2,10 @@
 Type=Application
 Name=Repair Suite Stems
 Comment=Offline four-stem separation for Repair Suite
-Exec=repair-stems
+Exec=@CMAKE_INSTALL_FULL_BINDIR@/repair-stems
+TryExec=@CMAKE_INSTALL_FULL_BINDIR@/repair-stems
 Icon=audio-x-generic
 Terminal=false
+StartupNotify=true
 Categories=AudioVideo;Audio;
 Keywords=repair;stems;separation;demucs;vocals;drums;bass;

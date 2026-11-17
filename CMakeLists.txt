@@ -234,7 +234,11 @@ install(PROGRAMS tools/repair_separate.py DESTINATION bin
         RENAME repair-separate)
 install(PROGRAMS tools/repair_stems_gui.py DESTINATION bin
         RENAME repair-stems)
-install(FILES packaging/repair-stems.desktop
+configure_file(
+  "${CMAKE_SOURCE_DIR}/packaging/repair-stems.desktop.in"
+  "${CMAKE_BINARY_DIR}/repair-stems.desktop"
+  @ONLY)
+install(FILES "${CMAKE_BINARY_DIR}/repair-stems.desktop"
         DESTINATION share/applications)
 
 target_compile_options(repair_engine_test PRIVATE -UNDEBUG)
