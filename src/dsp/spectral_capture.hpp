@@ -7,7 +7,7 @@
 //
 // The edit list is guarded by a mutex on the editor side; the audio thread only
 // uses try_lock and skips the overlay for one block if the editor is writing.
-// That is a deliberate prototype trade-off; it never blocks the audio thread.
+// That is a deliberate trade-off: the audio thread never blocks.
 #pragma once
 
 #include <algorithm>
@@ -23,12 +23,7 @@ namespace repair {
 
 class SpectralCapture : public SpectralBridge {
 public:
-  struct Edit {
-    double startTime = 0.0;
-    double endTime = 0.0;
-    std::vector<float> left;
-    std::vector<float> right;
-  };
+  using Edit = SpectralEdit;
 
   void prepare(float sampleRate, float maxSeconds = 30.0f) noexcept {
     sampleRate_ = sampleRate > 0.0f ? sampleRate : 48000.0f;
@@ -58,6 +53,14 @@ public:
       edits_.clear();
     }
     editCount_.store(0, std::memory_order_relaxed);
+    previewActive_.store(false, std::memory_order_release);
+    {
+      std::unique_lock<std::mutex> lock(previewMutex_, std::try_to_lock);
+      if (lock.owns_lock()) {
+        previewCount_ = 0;
+        previewPos_.store(0, std::memory_order_relaxed);
+      }
+    }
   }
 
   void setArmed(bool armed) noexcept {
@@ -75,6 +78,7 @@ public:
       frozenReady_.store(false, std::memory_order_relaxed);
       freezeRequest_.store(false, std::memory_order_relaxed);
       frozenCount_ = 0;
+      previewActive_.store(false, std::memory_order_release);
     }
   }
 
@@ -169,6 +173,9 @@ public:
     }
     if (!transportValid) {
       captureStartValid_ = false;
+      write_ = 0;
+      count_ = 0;
+      countAtomic_.store(0, std::memory_order_relaxed);
       return;
     }
     if (captureStartValid_) {
@@ -224,6 +231,64 @@ public:
   const std::vector<Edit>& edits() const noexcept { return edits_; }
 
   // Host state thread: a consistent copy of the edit list.
+  void copyEdits(std::vector<SpectralEdit>* out) const override {
+    if (!out) {
+      return;
+    }
+    std::lock_guard<std::mutex> lock(editMutex_);
+    *out = edits_;
+  }
+
+  void replaceEdits(const std::vector<SpectralEdit>& edits) override {
+    std::lock_guard<std::mutex> lock(editMutex_);
+    edits_ = edits;
+    editCount_.store(static_cast<int>(edits.size()),
+                     std::memory_order_release);
+  }
+
+  void setPreview(const float* left, const float* right, int frames) override {
+    if (!left || !right || frames <= 0) {
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lock(previewMutex_);
+      previewL_.assign(left, left + frames);
+      previewR_.assign(right, right + frames);
+      previewCount_ = frames;
+      previewPos_.store(0, std::memory_order_release);
+    }
+    previewActive_.store(true, std::memory_order_release);
+  }
+
+  void clearPreview() override {
+    previewActive_.store(false, std::memory_order_release);
+    std::lock_guard<std::mutex> lock(previewMutex_);
+    previewCount_ = 0;
+    previewPos_.store(0, std::memory_order_release);
+  }
+
+  bool previewActive() const override {
+    return previewActive_.load(std::memory_order_acquire);
+  }
+
+  bool readPreview(float* left, float* right, int frames) noexcept {
+    if (!previewActive_.load(std::memory_order_acquire) || frames <= 0) {
+      return false;
+    }
+    std::unique_lock<std::mutex> lock(previewMutex_, std::try_to_lock);
+    if (!lock.owns_lock() || previewCount_ <= 0) {
+      return false;
+    }
+    int pos = previewPos_.load(std::memory_order_relaxed);
+    for (int i = 0; i < frames; ++i) {
+      left[i] = previewL_[static_cast<size_t>(pos)];
+      right[i] = previewR_[static_cast<size_t>(pos)];
+      pos = (pos + 1) % previewCount_;
+    }
+    previewPos_.store(pos, std::memory_order_relaxed);
+    return true;
+  }
+
   void copyEditsForState(std::vector<Edit>* out) const {
     if (!out) {
       return;
@@ -318,6 +383,11 @@ private:
   mutable std::mutex editMutex_;
   std::vector<Edit> edits_;
   std::atomic<int> editCount_{0};
+  std::mutex previewMutex_;
+  std::vector<float> previewL_, previewR_;
+  int previewCount_ = 0;
+  std::atomic<int> previewPos_{0};
+  std::atomic<bool> previewActive_{false};
   double playbackTime_ = 0.0;
   bool playbackValid_ = false;
 };

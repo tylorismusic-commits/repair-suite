@@ -308,6 +308,26 @@ void testDehum() {
   assert(20.0 * std::log10(humOut / humIn) < -20.0);
   assert(std::fabs(20.0 * std::log10(wantedOut / wantedIn)) < 0.5);
 
+  // Precision mode cancels the same harmonic series while preserving 1 kHz.
+  {
+    repair::Dehum precision;
+    precision.prepare(kSr);
+    c.humPrecision = true;
+    precision.setControls(c);
+    std::vector<float> pl = in;
+    std::vector<float> pr = in;
+    precision.process(pl.data(), pr.data(), n);
+    const double pIn = toneMag(in, 50.0f, start, count);
+    const double pOut = toneMag(pl, 50.0f, start, count);
+    const double wIn = toneMag(in, 1000.0f, start, count);
+    const double wOut = toneMag(pl, 1000.0f, start, count);
+    std::printf("precision hum 50 Hz %.1f dB, 1 kHz %.2f dB\n",
+                20.0 * std::log10(pOut / pIn),
+                20.0 * std::log10(wOut / wIn));
+    assert(20.0 * std::log10(pOut / pIn) < -20.0);
+    assert(std::fabs(20.0 * std::log10(wOut / wIn)) < 1.0);
+  }
+
   // Auto tune finds 60 Hz and rejects a clean signal as "no hum".
   std::vector<float> hum(n);
   for (int i = 0; i < n; ++i) {

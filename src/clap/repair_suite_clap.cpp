@@ -32,9 +32,9 @@
 namespace repair {
 namespace {
 
-// Set COMP_DEBUG=1 to trace the editor thread to /tmp/repairsuite-ui.log.
+// Set REPAIR_DEBUG=1 to trace the editor thread to /tmp/repairsuite-ui.log.
 bool debugOn() {
-  static const bool on = std::getenv("COMP_DEBUG") != nullptr;
+  static const bool on = std::getenv("REPAIR_DEBUG") != nullptr;
   return on;
 }
 
@@ -124,6 +124,10 @@ public:
     shared_.compare.store(false, std::memory_order_relaxed);
     shared_.captureActive.store(false, std::memory_order_relaxed);
     shared_.noiseLearnActive.store(false, std::memory_order_relaxed);
+    if (auto* bridge =
+            shared_.spectralBridge.load(std::memory_order_relaxed)) {
+      bridge->clearPreview();
+    }
     state_.editParam = -1;
     std::lock_guard<std::mutex> lock(mutex_);
     opened_ = false;
@@ -711,6 +715,8 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
       edits.push_back(std::move(edit));
     }
     s->engine.capture().replaceEditsFromState(edits);
+    s->shared.editCount.store(s->engine.capture().editCount(),
+                              std::memory_order_relaxed);
   }
   return true;
 }

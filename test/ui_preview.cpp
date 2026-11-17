@@ -57,11 +57,9 @@ int main(int argc, char** argv) {
     shared.spectralBridge.store(&capture);
     shared.sampleRate.store(48000.0f);
     panel.tick(shared, state);
-    state.hasSelection = true;
-    state.selX0 = 300;
-    state.selY0 = 270;
-    state.selX1 = 430;
-    state.selY1 = 380;
+    panel.pointerDown(shared, state, 300, 270, false);
+    panel.pointerMove(shared, state, 430, 380, false);
+    panel.pointerUp(shared, state);
   }
   cairo_surface_t* surface =
       cairo_image_surface_create(CAIRO_FORMAT_ARGB32, kPanelWidth, kPanelHeight);

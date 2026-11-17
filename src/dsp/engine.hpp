@@ -1,9 +1,9 @@
-// Repair Suite — engine (Phase 0 scaffold)
+// Repair Suite — engine
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The chain is scaffolded but only the shared STFT pass-through, the spectral
-// capture prototype and the gain stages are active.  Each module will be
-// inserted in the order documented in docs/RESEARCH_AND_PLAN.md.
+// Fixed chain: De-Clip -> De-Click -> De-Hum -> De-Noise -> De-Reverb ->
+// shared STFT -> Output.  The spectral capture/overlay and preview live in
+// SpectralCapture; the editor talks to it through the SpectralBridge pointer.
 #pragma once
 
 #include <algorithm>
@@ -39,8 +39,6 @@ public:
     outputGain_.setTime(15.0f, sr_);
     inputGain_.reset(1.0f);
     outputGain_.reset(1.0f);
-    captureArmed_ = false;
-    noiseLearn_ = false;
     reset();
   }
 
@@ -69,11 +67,9 @@ public:
     if (c.clearEdits) {
       capture_.clearEdits();
     }
-    captureArmed_ = c.captureArm;
-    noiseLearn_ = c.noiseLearn;
   }
 
-  // CLAP/LV2 compatibility.  The scaffold has no tempo-synced module yet.
+  // CLAP/LV2 compatibility.  There is no tempo-synced module yet.
   void setTempo(float /*bpm*/, bool /*host*/) noexcept {}
 
   void reset() noexcept {
@@ -123,13 +119,7 @@ public:
     // De-Hum is zero latency, so it does not add to the reported total.
     dehum_.process(left, right, frames);
 
-    // Capture is a Phase 0 placeholder at the input tap.  The production tap
-    // is after De-Reverb, before Output trim.
-    capture_.push(left, right, frames, hostTime, hostTimeValid);
-    capture_.applyOverlay(left, right, frames, hostTime, hostTimeValid);
-
-    // De-Noise shares the STFT pass.  De-Reverb and the spectral editor will
-    // multiply their gains into the same bins later.
+    // De-Noise and De-Reverb share the STFT pass.
     stft_.process(left, right, frames,
                   [this](float* reL, float* imL, float* reR, float* imR,
                          int bins) {
@@ -137,12 +127,25 @@ public:
                     dereverb_.processBins(reL, imL, reR, imR, bins);
                   });
 
+    // The spectral tap is after De-Reverb and before Output trim, so the
+    // editor sees exactly what the final chain produces.
+    capture_.push(left, right, frames, hostTime, hostTimeValid);
+    capture_.applyOverlay(left, right, frames, hostTime, hostTimeValid);
+
     const float outGain = outputGain_.next();
     for (int i = 0; i < frames; ++i) {
       left[i] *= outGain;
       right[i] *= outGain;
       peakOut = std::max(peakOut, std::max(std::fabs(left[i]),
                                            std::fabs(right[i])));
+    }
+
+    if (capture_.readPreview(left, right, frames)) {
+      peakOut = 0.0f;
+      for (int i = 0; i < frames; ++i) {
+        peakOut = std::max(peakOut, std::max(std::fabs(left[i]),
+                                             std::fabs(right[i])));
+      }
     }
 
     meters.inPeakDb = hdsp::gainToDb(peakIn);
@@ -177,8 +180,6 @@ public:
 private:
   float sr_ = 48000.0f;
   Controls controls_;
-  bool captureArmed_ = false;
-  bool noiseLearn_ = false;
   Declip declip_;
   Declick declick_;
   Dehum dehum_;

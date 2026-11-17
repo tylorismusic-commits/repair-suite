@@ -10,6 +10,13 @@
 
 namespace repair {
 
+struct SpectralEdit {
+  double startTime = 0.0;
+  double endTime = 0.0;
+  std::vector<float> left;
+  std::vector<float> right;
+};
+
 class SpectralBridge {
 public:
   virtual ~SpectralBridge() = default;
@@ -28,6 +35,14 @@ public:
                        const float* right, int frames) = 0;
   virtual void clearEdits() = 0;
   virtual int editCount() const = 0;
+  virtual void copyEdits(std::vector<SpectralEdit>* out) const = 0;
+  virtual void replaceEdits(const std::vector<SpectralEdit>& edits) = 0;
+
+  // Selection audition.  The engine loops this buffer while preview is on.
+  virtual void setPreview(const float* left, const float* right,
+                          int frames) = 0;
+  virtual void clearPreview() = 0;
+  virtual bool previewActive() const = 0;
   virtual float capturedSeconds() const = 0;
 };
 

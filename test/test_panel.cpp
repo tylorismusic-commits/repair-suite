@@ -121,6 +121,63 @@ int main() {
     const double editRms =
         std::sqrt(energy / std::max<size_t>(1, edit.left.size()));
     assert(editRms < 0.02);
+
+    spectralPanel.pointerDown(spectralShared, spectralState, 345, 607, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(capture.editCount() == 0);
+    spectralPanel.pointerDown(spectralShared, spectralState, 423, 607, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(capture.editCount() == 1);
+
+    spectralPanel.pointerDown(spectralShared, spectralState, 1052, 303, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(capture.editCount() >= 1);
+
+    spectralPanel.pointerDown(spectralShared, spectralState, 706, 607, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(capture.previewActive());
+    {
+      std::vector<float> pl(128), pr(128);
+      assert(capture.readPreview(pl.data(), pr.data(), 128));
+    }
+    spectralPanel.pointerDown(spectralShared, spectralState, 706, 607, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(!capture.previewActive());
+
+    // Lasso and brush tools fill a selection mask.
+    spectralPanel.pointerDown(spectralShared, spectralState, 174, 607, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    spectralPanel.pointerDown(spectralShared, spectralState, 100, 300, false);
+    spectralPanel.pointerMove(spectralShared, spectralState, 200, 310, false);
+    spectralPanel.pointerMove(spectralShared, spectralState, 180, 410, false);
+    spectralPanel.pointerMove(spectralShared, spectralState, 90, 390, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(spectralState.hasSelection);
+    spectralPanel.pointerDown(spectralShared, spectralState, 262, 607, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    spectralPanel.pointerDown(spectralShared, spectralState, 300, 320, false);
+    spectralPanel.pointerMove(spectralShared, spectralState, 340, 360, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(spectralState.hasSelection);
+
+    // Zoom and diff toggle do not disturb the capture.
+    spectralPanel.wheel(spectralShared, spectralState, 400, 350, 1.0);
+    assert(spectralState.specZoom > 1.0);
+    spectralPanel.pointerDown(spectralShared, spectralState, 628, 607, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(spectralState.diffMode);
+    spectralPanel.draw(sctx, spectralShared, spectralState);
+
+    const int beforeZoomEdit = capture.editCount();
+    spectralPanel.pointerDown(spectralShared, spectralState, 91, 607, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    spectralPanel.pointerDown(spectralShared, spectralState, 350, 300, false);
+    spectralPanel.pointerMove(spectralShared, spectralState, 450, 400, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    spectralShared.set(P_SPEC_OP, 0.0);
+    spectralPanel.pointerDown(spectralShared, spectralState, 865, 303, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(capture.editCount() > beforeZoomEdit);
     cairo_destroy(sctx);
     cairo_surface_destroy(ss);
   }

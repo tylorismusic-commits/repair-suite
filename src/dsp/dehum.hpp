@@ -5,8 +5,8 @@
 // harmonics, with an overall depth blend.  Auto tune searches the 50/60 Hz
 // regions and scores the harmonic series.
 //
-// The precision (sinusoidal re-synthesis) mode is scaffolded in the controls;
-// 0.1 uses the notch bank for both until the re-synthesis path is added.
+// Precision mode uses an adaptive harmonic canceller (one complex LMS weight
+// pair per harmonic) rather than the notch cascade.
 #pragma once
 
 #include <algorithm>
@@ -29,6 +29,9 @@ public:
       for (auto& n : notch_[ch]) {
         n.reset();
       }
+      for (auto& h : harmonic_[ch]) {
+        h.reset();
+      }
     }
     anaBuf_.assign(kAnalysis, 0.0f);
     anaWrite_ = 0;
@@ -45,6 +48,9 @@ public:
     for (int ch = 0; ch < 2; ++ch) {
       for (auto& n : notch_[ch]) {
         n.reset();
+      }
+      for (auto& h : harmonic_[ch]) {
+        h.reset();
       }
     }
     std::fill(anaBuf_.begin(), anaBuf_.end(), 0.0f);
@@ -64,7 +70,9 @@ public:
     oddOnly_ = c.humOdd;
     const float target = c.humAuto ? autoHz_ : c.humHz;
     if (std::fabs(target - currentHz_) > 0.01f ||
-        harmonics_ != activeHarmonics_ || c.humOdd != activeOdd_) {
+        harmonics_ != activeHarmonics_ || c.humOdd != activeOdd_ ||
+        c.humPrecision != precision_) {
+      precision_ = c.humPrecision;
       rebuild();
     }
   }
@@ -95,9 +103,18 @@ public:
       }
       float wl = l;
       float wr = r;
-      for (int k = 0; k < activeHarmonics_; ++k) {
-        wl = notch_[0][static_cast<size_t>(k)].process(wl);
-        wr = notch_[1][static_cast<size_t>(k)].process(wr);
+      if (precision_) {
+        for (int k = 0; k < activeHarmonics_; ++k) {
+          wl = harmonic_[0][static_cast<size_t>(k)].process(
+              wl, freq_[static_cast<size_t>(k)], sr_);
+          wr = harmonic_[1][static_cast<size_t>(k)].process(
+              wr, freq_[static_cast<size_t>(k)], sr_);
+        }
+      } else {
+        for (int k = 0; k < activeHarmonics_; ++k) {
+          wl = notch_[0][static_cast<size_t>(k)].process(wl);
+          wr = notch_[1][static_cast<size_t>(k)].process(wr);
+        }
       }
       left[i] = l + mix_ * depth_ * (wl - l);
       right[i] = r + mix_ * depth_ * (wr - r);
@@ -133,6 +150,33 @@ private:
     }
   };
 
+  struct PrecisionHarmonic {
+    float phase = 0.0f;
+    float wCos = 0.0f;
+    float wSin = 0.0f;
+
+    void reset() noexcept {
+      phase = 0.0f;
+      wCos = 0.0f;
+      wSin = 0.0f;
+    }
+
+    float process(float x, float freq, float sr) noexcept {
+      const float c = std::cos(phase);
+      const float s = std::sin(phase);
+      const float est = wCos * c + wSin * s;
+      const float e = x - est;
+      constexpr float mu = 0.004f;
+      wCos += mu * e * c;
+      wSin += mu * e * s;
+      phase += 2.0f * 3.14159265358979323846f * freq / sr;
+      if (phase >= 2.0f * 3.14159265358979323846f) {
+        phase -= 2.0f * 3.14159265358979323846f;
+      }
+      return e;
+    }
+  };
+
   void rebuild() noexcept {
     currentHz_ = controls_.humAuto ? autoHz_ : controls_.humHz;
     currentHz_ = std::clamp(currentHz_, 20.0f, 200.0f);
@@ -149,7 +193,9 @@ private:
       const float q = std::max(8.0f, 30.0f - 0.15f * static_cast<float>(k));
       for (int ch = 0; ch < 2; ++ch) {
         notch_[ch][static_cast<size_t>(activeHarmonics_)].set(f, q, sr_);
+        harmonic_[ch][static_cast<size_t>(activeHarmonics_)].reset();
       }
+      freq_[static_cast<size_t>(activeHarmonics_)] = f;
       ++activeHarmonics_;
     }
     activeOdd_ = oddOnly_;
@@ -215,6 +261,8 @@ private:
   float sr_ = 48000.0f;
   Controls controls_;
   Notch notch_[2][kMaxHarmonics];
+  PrecisionHarmonic harmonic_[2][kMaxHarmonics];
+  float freq_[kMaxHarmonics] = {};
   std::vector<float> anaBuf_;
   int anaWrite_ = 0;
   int anaCount_ = 0;
@@ -225,6 +273,7 @@ private:
   int activeHarmonics_ = 0;
   bool oddOnly_ = false;
   bool activeOdd_ = false;
+  bool precision_ = false;
   bool autoActive_ = false;
   float mix_ = 1.0f;
   float depth_ = 1.0f;

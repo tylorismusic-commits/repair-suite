@@ -1,56 +1,55 @@
 # Repair Suite
 
-**Status: Phase 0 scaffold.** The plug-in builds and loads as CLAP and LV2, the
-shared STFT and spectral capture/overlay prototype are tested, and the panel
-skeleton draws seven pages. The repair DSP modules are not implemented yet.
+**Status: feature-complete alpha.** One CLAP + LV2 plug-in with the automatic
+repair chain and an in-window spectral editor. Manual tuning on real material
+and the preset browser are the remaining release work.
 
-Repair Suite is a real-time audio repair strip for Linux: de-clip, de-click,
-de-hum, de-noise, de-reverb and selection-based spectral repair, in one fixed
-chain with per-stage bypass. Planned as the restoration counterpart to Comp
-Suite, Vocal Suite and Space Suite.
+Repair Suite is a real-time audio repair strip for Linux, in the same visual
+language as Comp Suite, Vocal Suite and Space Suite.
 
 ![Repair Suite panel](docs/panel.png)
 
 ![Spectral repair page](docs/spectral.png)
 
-## What works today
+## Signal chain
 
-- CLAP and LV2 bundles build and load in host smoke tests.
-- 48 host parameters covering the planned modules.
-- 1200×760 Cairo/Jost panel with seven pages: CLIP, CLICK, HUM, NOISE, VERB,
-  SPEC, OUT. Controls are wired to parameters.
-- **De-Clip** — flat-top detection, cubic, balanced and clipping-consistent
-  iterative STFT reconstruction, auto/manual thresholds, mix and output
-  headroom.
-- **De-Click** — median-residual click/crackle detection, stereo-linked repair
-  by cubic Hermite interpolation, sensitivity/width/mix controls.
-- **De-Hum** — narrow notch bank with automatic 50/60 Hz harmonic detection,
-  odd-only, depth and mix.
-- **De-Noise** — STFT spectral subtraction with a two-second learned noise
-  profile, transient hold, smoothing, reduction and mix. The profile is saved
-  with the CLAP/LV2 session state.
+```
+Input → De-Clip → De-Click → De-Hum → De-Noise → De-Reverb
+      → Spectral Repair → Output
+```
+
+All stages are always instantiated. Per-stage ON and MIX keep latency constant.
+Total latency is **4221 samples** (~87.9 ms at 48 kHz): 1535 for De-Clip, 639
+for De-Click and 2047 for the shared STFT. Hum, noise and reverb add no extra
+latency.
+
+## Automatic modules
+
+- **De-Clip** — flat-top detection, Fast/Balanced/High reconstruction, iterative
+  clipping-consistent STFT mode, automatic thresholds, mix and headroom.
+- **De-Click** — median-residual click/crackle detection, stereo-linked cubic
+  repair, sensitivity, width and mix.
+- **De-Hum** — notch bank and adaptive sinusoidal precision mode, automatic
+  50/60 Hz harmonic detection, odd-only, depth and mix.
+- **De-Noise** — two-second learned profile, spectral subtraction, transient
+  hold, smoothing, reduction and mix. The profile is saved in session state.
 - **De-Reverb** — late-tail spectral subtraction with tail length, pre-delay,
-  transient protection, tilt and mix, sharing the same STFT pass.
-- **Spectral Repair** — capture a section, freeze, inspect the spectrogram,
-  drag a time-frequency selection, then attenuate, erase, interpolate or
-  amplify it. Edits are anchored to host time, overlaid on playback, and saved
-  with the session state.
-- Shared real-time STFT: 2048-sample frames, 75% overlap, identity
-  reconstruction is unit-tested.
-- Total reported latency is 4221 samples (~87.9 ms at 48 kHz): 1535 for
-  De-Clip, 639 for De-Click and 2047 for the shared STFT.
-- Spectral capture prototype: rolling buffer with host-time stamps,
-  timeline-anchored edit overlays and crossfades. Unit-tested; not yet wired to
-  a spectral editor UI.
-- All host, panel, DSP and UI smoke tests pass.
+  transient protection, tilt and mix, sharing the denoise STFT.
 
-## Not implemented yet
+## Spectral editor
 
-- Patch/match, undo/redo, and precision hum.
-- LV2 spectral capture depends on the host providing instance-access; CLAP has direct access.
-- The spectral editor (capture/select/interpolate UI) and state serialisation.
-- Preset browser UI (the preset table and LV2 preset export already exist).
-- Loudness/latency status polish.
+- Rolling capture, stable freeze snapshot, full spectrogram with log frequency
+  axis.
+- Rectangle, lasso and brush selection.
+- Time zoom (wheel or buttons) and right-drag panning.
+- Attenuate, Erase, Interpolate, Patch, basic Match and Amplify.
+- Undo/redo, edit list, per-edit host-time anchoring and playback overlay.
+- Preview loop of the selected/edited audio.
+- Original-vs-processed difference spectrogram.
+- Spectral edits are saved in CLAP and LV2 session state.
+
+LV2 spectral capture depends on the host providing `instance-access`; when it
+is absent the page says so. CLAP always has direct access.
 
 ## Build
 
@@ -66,14 +65,20 @@ ctest --test-dir build --output-on-failure
 cmake --install build
 ```
 
-The plug-in installs as:
+Installs to:
 
 - `~/.clap/RepairSuite.clap` + `RepairSuite.resources/`
 - `~/.lv2/repair-suite.lv2/`
 
-## Design and roadmap
+## Still to do
 
-The full research, chain order, DSP design, UI plan and phased roadmap live in
-[`docs/RESEARCH_AND_PLAN.md`](docs/RESEARCH_AND_PLAN.md).
+- Preset browser UI (the preset table and LV2 preset export already exist).
+- Real-world listening/tuning pass on vinyl, dialogue, drums and clipped
+  material.
+- More sophisticated Match (the current version repeats the last repair at
+  similar-band events).
+- ARA/standalone spectral editing, if the Linux host ecosystem makes it useful.
+
+Full research, design and roadmap: [`docs/RESEARCH_AND_PLAN.md`](docs/RESEARCH_AND_PLAN.md).
 
 Licence: GPL-3.0-or-later.

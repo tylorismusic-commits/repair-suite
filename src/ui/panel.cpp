@@ -297,12 +297,35 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
       addToggle(P_SPEC_ON, 790, 170, 140, 40, "ON");
       addButton(790, 228, 150, 42, "CAPTURE", 1);
       addButton(956, 228, 150, 42, "FREEZE", 3);
-      addButton(790, 282, 150, 42, "APPLY", 5);
-      addButton(956, 282, 150, 42, "CLEAR EDITS", 4);
+      addButton(790, 282, 96, 42, "APPLY", 5);
+      addButton(894, 282, 100, 42, "CLEAR", 4);
+      addButton(1002, 282, 100, 42, "MATCH", 19);
       addChoice(P_SPEC_OP, 790, 344, 316, 48, "OPERATION");
       addKnob(P_SPEC_AMOUNT, 858, 500, 48);
       addKnob(P_SPEC_MIX, 1010, 500, 48);
       addToggle(P_SPEC_PRESERVE, 790, 600, 200, 40, "PRESERVE FLOOR");
+      {
+        const double by = 590;
+        const double bh = 34;
+        double bx = 56;
+        addButton(bx, by, 70, bh, "RECT", 10);
+        bx += 78;
+        addButton(bx, by, 80, bh, "LASSO", 11);
+        bx += 88;
+        addButton(bx, by, 80, bh, "BRUSH", 12);
+        bx += 88;
+        addButton(bx, by, 70, bh, "UNDO", 13);
+        bx += 78;
+        addButton(bx, by, 70, bh, "REDO", 14);
+        bx += 78;
+        addButton(bx, by, 58, bh, "ZOOM-", 15);
+        bx += 66;
+        addButton(bx, by, 58, bh, "ZOOM+", 16);
+        bx += 66;
+        addButton(bx, by, 60, bh, "DIFF", 17);
+        bx += 68;
+        addButton(bx, by, 80, bh, "PREVIEW", 18);
+      }
       break;
     default:  // OUT
       addKnob(P_INPUT, x0, y1, 56);
@@ -327,6 +350,9 @@ void Panel::tick(Shared& shared, PanelState& state) {
   state.transportValid = shared.transportValid.load(std::memory_order_relaxed);
   state.editCount = shared.editCount.load(std::memory_order_relaxed);
   state.sampleRate = shared.sampleRate.load(std::memory_order_relaxed);
+  if (state.diffMode && state.editCount != diffEditCount_) {
+    rebuildDiff(shared, state);
+  }
   state.inHistory[state.inHistoryHead] = state.inLevelL;
   state.inHistoryHead = (state.inHistoryHead + 1) % PanelState::kHistory;
   state.outHistory[state.outHistoryHead] = state.outLevelL;
@@ -356,23 +382,32 @@ void Panel::loadCapture(Shared& shared, PanelState& state) {
   if (bridge->copyFrozen(&captureL_, &captureR_, &captureStart_)) {
     captureLoaded_ = true;
     state.hasSelection = false;
+    state.specZoom = 1.0;
+    state.specScroll = 0.0;
+    lastEditL_.clear();
+    lastEditR_.clear();
+    undoStack_.clear();
+    redoStack_.clear();
+    diffValid_ = false;
     buildSpectrogram(state);
   }
 }
 
-void Panel::buildSpectrogram(PanelState& state) {
+void Panel::buildMagnitude(const std::vector<float>& left,
+                           const std::vector<float>& right,
+                           std::vector<float>* mag, float sampleRate) const {
   constexpr int kCols = 240;
   constexpr int kRows = 150;
   constexpr int kN = 1024;
-  state.specW = kCols;
-  state.specH = kRows;
-  state.specPixels.assign(static_cast<size_t>(kCols) * kRows, 0xff0a0e12u);
-  state.specValid = false;
-  state.specStartTime = captureStart_;
-  const int n = static_cast<int>(captureL_.size());
+  if (!mag) {
+    return;
+  }
+  mag->assign(static_cast<size_t>(kCols) * kRows, -120.0f);
+  const int n = static_cast<int>(left.size());
   if (n < 64) {
     return;
   }
+  const float sr = sampleRate > 0.0f ? sampleRate : 48000.0f;
   Fft fft;
   fft.prepare(kN);
   std::vector<float> window(kN);
@@ -381,7 +416,6 @@ void Panel::buildSpectrogram(PanelState& state) {
         0.5f - 0.5f * std::cos(2.0f * static_cast<float>(kPiD) * i / (kN - 1));
   }
   std::vector<float> frame(kN), re(kN), im(kN);
-  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
   for (int col = 0; col < kCols; ++col) {
     const int center = (n - 1) * col / (kCols - 1);
     const int start = center - kN / 2;
@@ -389,8 +423,9 @@ void Panel::buildSpectrogram(PanelState& state) {
       const int at = start + i;
       float v = 0.0f;
       if (at >= 0 && at < n) {
-        v = 0.5f * (captureL_[static_cast<size_t>(at)] +
-                    captureR_[static_cast<size_t>(at)]);
+        v = 0.5f * (left[static_cast<size_t>(at)] +
+                    (right.empty() ? left[static_cast<size_t>(at)]
+                                   : right[static_cast<size_t>(at)]));
       }
       frame[static_cast<size_t>(i)] = v * window[static_cast<size_t>(i)];
     }
@@ -400,12 +435,34 @@ void Panel::buildSpectrogram(PanelState& state) {
       const float hz = 20000.0f * std::pow(0.001f, t);
       int bin = static_cast<int>(hz * kN / sr);
       bin = std::clamp(bin, 1, kN / 2 - 1);
-      const float mag = std::sqrt(re[static_cast<size_t>(bin)] *
-                                      re[static_cast<size_t>(bin)] +
-                                  im[static_cast<size_t>(bin)] *
-                                      im[static_cast<size_t>(bin)]) /
-                        static_cast<float>(kN);
-      float db = 20.0f * std::log10(mag + 1.0e-9f);
+      const float m = std::sqrt(re[static_cast<size_t>(bin)] *
+                                    re[static_cast<size_t>(bin)] +
+                                im[static_cast<size_t>(bin)] *
+                                    im[static_cast<size_t>(bin)]) /
+                      static_cast<float>(kN);
+      (*mag)[static_cast<size_t>(row * kCols + col)] =
+          20.0f * std::log10(m + 1.0e-9f);
+    }
+  }
+}
+
+void Panel::buildSpectrogram(PanelState& state) {
+  constexpr int kCols = 240;
+  constexpr int kRows = 150;
+  state.specW = kCols;
+  state.specH = kRows;
+  state.specPixels.assign(static_cast<size_t>(kCols) * kRows, 0xff0a0e12u);
+  state.specMask.assign(static_cast<size_t>(kCols) * kRows, 0);
+  state.specValid = false;
+  state.specStartTime = captureStart_;
+  if (captureL_.size() < 64) {
+    return;
+  }
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  buildMagnitude(captureL_, captureR_, &specMag_, sr);
+  for (int row = 0; row < kRows; ++row) {
+    for (int col = 0; col < kCols; ++col) {
+      const float db = specMag_[static_cast<size_t>(row * kCols + col)];
       float e = std::clamp((db + 70.0f) / 60.0f, 0.0f, 1.0f);
       e = std::pow(e, 1.25f);
       double r = 0.02;
@@ -422,14 +479,18 @@ void Panel::buildSpectrogram(PanelState& state) {
         g = 0.42 + (0.78 - 0.42) * u;
         b = 0.46 + (0.30 - 0.46) * u;
       }
-      const uint32_t rr = static_cast<uint32_t>(std::clamp(r, 0.0, 1.0) * 255.0);
-      const uint32_t gg = static_cast<uint32_t>(std::clamp(g, 0.0, 1.0) * 255.0);
-      const uint32_t bb = static_cast<uint32_t>(std::clamp(b, 0.0, 1.0) * 255.0);
+      const uint32_t rr =
+          static_cast<uint32_t>(std::clamp(r, 0.0, 1.0) * 255.0);
+      const uint32_t gg =
+          static_cast<uint32_t>(std::clamp(g, 0.0, 1.0) * 255.0);
+      const uint32_t bb =
+          static_cast<uint32_t>(std::clamp(b, 0.0, 1.0) * 255.0);
       state.specPixels[static_cast<size_t>(row * kCols + col)] =
           0xff000000u | (rr << 16) | (gg << 8) | bb;
     }
   }
   state.specValid = true;
+  diffValid_ = false;
 }
 
 void Panel::selectionTimes(const PanelState& state, double* t0, double* t1,
@@ -438,16 +499,10 @@ void Panel::selectionTimes(const PanelState& state, double* t0, double* t1,
   const double x1 = std::max(state.selX0, state.selX1);
   const double y0 = std::min(state.selY0, state.selY1);
   const double y1 = std::max(state.selY0, state.selY1);
-  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
-  const double duration = static_cast<double>(captureL_.size()) / sr;
-  *t0 = state.specStartTime + (x0 - kSpecX) / kSpecW * duration;
-  *t1 = state.specStartTime + (x1 - kSpecX) / kSpecW * duration;
-  auto yToHz = [](double y) {
-    const double t = std::clamp((y - kSpecY) / kSpecH, 0.0, 1.0);
-    return 20000.0 * std::pow(0.001, t);
-  };
-  const double fa = yToHz(y0);
-  const double fb = yToHz(y1);
+  *t0 = plotTime(state, x0);
+  *t1 = plotTime(state, x1);
+  const double fa = plotHz(y0);
+  const double fb = plotHz(y1);
   *f0 = std::min(fa, fb);
   *f1 = std::max(fa, fb);
 }
@@ -505,7 +560,51 @@ bool Panel::applySpectralEdit(Shared& shared, PanelState& state) {
   lo = std::clamp(lo, 1, kN / 2 - 2);
   hi = std::clamp(hi, lo + 1, kN / 2 - 1);
 
+  // Patch copies adjacent material instead of doing a band edit.
+  if (op == 3) {
+    const int source = (i0 - len >= 0) ? i0 - len
+                                       : ((i1 + len <= n) ? i1 : 0);
+    std::vector<float> outL(static_cast<size_t>(len));
+    std::vector<float> outR(static_cast<size_t>(len));
+    for (int i = 0; i < len; ++i) {
+      const int at = source + i;
+      if (at >= 0 && at < n) {
+        outL[static_cast<size_t>(i)] = captureL_[static_cast<size_t>(at)];
+        outR[static_cast<size_t>(i)] = captureR_[static_cast<size_t>(at)];
+      }
+    }
+    pushUndo(shared);
+    lastEditL_ = outL;
+    lastEditR_ = outR;
+    const double startTime = captureStart_ + static_cast<double>(i0) / sr;
+    const double endTime = captureStart_ + static_cast<double>(i1) / sr;
+    const bool ok = bridge->addEdit(startTime, endTime, outL.data(),
+                                    outR.data(), len);
+    state.editCount = bridge->editCount();
+    diffValid_ = false;
+    return ok;
+  }
+
+  const double totalDuration =
+      static_cast<double>(n) / static_cast<double>(sr);
+  const int maskW = state.specW;
+  const int maskH = state.specH;
+  const bool useMask = maskW > 0 && maskH > 0 &&
+                       state.specMask.size() ==
+                           static_cast<size_t>(maskW) * maskH;
   for (int start = 0; start + kN <= workLen; start += kHop) {
+    int frameCol = -1;
+    if (useMask && totalDuration > 0.0) {
+      const double frameTime =
+          captureStart_ +
+          static_cast<double>(workStart + start + kN / 2) / sr;
+      const double norm =
+          (frameTime - state.specStartTime) / totalDuration;
+      frameCol = static_cast<int>(norm * maskW);
+      if (frameCol < 0 || frameCol >= maskW) {
+        continue;
+      }
+    }
     for (int i = 0; i < kN; ++i) {
       const float w = window[static_cast<size_t>(i)];
       reL[static_cast<size_t>(i)] =
@@ -518,6 +617,17 @@ bool Panel::applySpectralEdit(Shared& shared, PanelState& state) {
     fft.forward(reL.data(), reL.data(), imL.data());
     fft.forward(reR.data(), reR.data(), imR.data());
     for (int k = lo; k <= hi; ++k) {
+      if (useMask) {
+        const float hz = static_cast<float>(k) * sr / kN;
+        const double norm =
+            std::log(std::max(20.0, static_cast<double>(hz)) / 20000.0) /
+            std::log(0.001);
+        const int row = static_cast<int>(std::clamp(norm, 0.0, 1.0) * maskH);
+        const int rr = std::clamp(row, 0, maskH - 1);
+        if (!state.specMask[static_cast<size_t>(rr * maskW + frameCol)]) {
+          continue;
+        }
+      }
       float gain = 1.0f;
       if (op == 1) {
         gain = 0.0f;
@@ -573,9 +683,476 @@ bool Panel::applySpectralEdit(Shared& shared, PanelState& state) {
     outL[static_cast<size_t>(i)] = accL[static_cast<size_t>(at)];
     outR[static_cast<size_t>(i)] = accR[static_cast<size_t>(at)];
   }
+  pushUndo(shared);
+  lastEditL_ = outL;
+  lastEditR_ = outR;
   const double startTime = captureStart_ + static_cast<double>(i0) / sr;
   const double endTime = captureStart_ + static_cast<double>(i1) / sr;
-  return bridge->addEdit(startTime, endTime, outL.data(), outR.data(), len);
+  const bool ok = bridge->addEdit(startTime, endTime, outL.data(), outR.data(),
+                                  len);
+  state.editCount = bridge->editCount();
+  diffValid_ = false;
+  if (state.previewMode) {
+    setPreview(shared, state);
+  }
+  return ok;
+}
+
+
+double Panel::plotHz(double y) const {
+  const double t = std::clamp((y - kSpecY) / kSpecH, 0.0, 1.0);
+  return 20000.0 * std::pow(0.001, t);
+}
+
+double Panel::hzToY(double hz) const {
+  const double t = std::log(std::max(20.0, hz) / 20000.0) / std::log(0.001);
+  return kSpecY + kSpecH * std::clamp(t, 0.0, 1.0);
+}
+
+double Panel::plotTime(const PanelState& state, double x) const {
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double total =
+      static_cast<double>(captureL_.size()) / static_cast<double>(sr);
+  const double zoom = std::max(1.0, state.specZoom);
+  const double view = total / zoom;
+  const double start = state.specStartTime +
+                       state.specScroll * std::max(0.0, total - view);
+  return start + (x - kSpecX) / kSpecW * view;
+}
+
+double Panel::timeToX(const PanelState& state, double t) const {
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double total =
+      static_cast<double>(captureL_.size()) / static_cast<double>(sr);
+  const double zoom = std::max(1.0, state.specZoom);
+  const double view = total / zoom;
+  const double start = state.specStartTime +
+                       state.specScroll * std::max(0.0, total - view);
+  return kSpecX + (t - start) / std::max(1.0e-9, view) * kSpecW;
+}
+
+void Panel::pushUndo(Shared& shared) {
+  auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
+  if (!bridge) {
+    return;
+  }
+  std::vector<SpectralEdit> current;
+  bridge->copyEdits(&current);
+  undoStack_.push_back(std::move(current));
+  if (undoStack_.size() > 20) {
+    undoStack_.erase(undoStack_.begin());
+  }
+  redoStack_.clear();
+}
+
+void Panel::undo(Shared& shared, PanelState& state) {
+  if (undoStack_.empty()) {
+    return;
+  }
+  auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
+  if (!bridge) {
+    return;
+  }
+  std::vector<SpectralEdit> current;
+  bridge->copyEdits(&current);
+  redoStack_.push_back(std::move(current));
+  auto previous = std::move(undoStack_.back());
+  undoStack_.pop_back();
+  bridge->replaceEdits(previous);
+  state.editCount = bridge->editCount();
+  state.hasSelection = false;
+  diffValid_ = false;
+  if (state.previewMode) {
+    setPreview(shared, state);
+  }
+}
+
+void Panel::redo(Shared& shared, PanelState& state) {
+  if (redoStack_.empty()) {
+    return;
+  }
+  auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
+  if (!bridge) {
+    return;
+  }
+  std::vector<SpectralEdit> current;
+  bridge->copyEdits(&current);
+  undoStack_.push_back(std::move(current));
+  auto next = std::move(redoStack_.back());
+  redoStack_.pop_back();
+  bridge->replaceEdits(next);
+  state.editCount = bridge->editCount();
+  state.hasSelection = false;
+  diffValid_ = false;
+  if (state.previewMode) {
+    setPreview(shared, state);
+  }
+}
+
+void Panel::setPreview(Shared& shared, PanelState& state) {
+  auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
+  if (!bridge) {
+    state.previewMode = false;
+    return;
+  }
+  if (!state.previewMode) {
+    bridge->clearPreview();
+    return;
+  }
+  if (captureL_.empty()) {
+    state.previewMode = false;
+    return;
+  }
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  int i0 = 0;
+  int i1 = static_cast<int>(captureL_.size());
+  if (state.hasSelection) {
+    double t0 = 0.0;
+    double t1 = 0.0;
+    double f0 = 0.0;
+    double f1 = 0.0;
+    selectionTimes(state, &t0, &t1, &f0, &f1);
+    (void)f0;
+    (void)f1;
+    i0 = static_cast<int>((t0 - captureStart_) * sr + 0.5);
+    i1 = static_cast<int>((t1 - captureStart_) * sr + 0.5);
+  }
+  i0 = std::clamp(i0, 0, static_cast<int>(captureL_.size()));
+  i1 = std::clamp(i1, i0, static_cast<int>(captureL_.size()));
+  if (i1 - i0 < 16) {
+    state.previewMode = false;
+    return;
+  }
+  const int len = i1 - i0;
+  std::vector<float> pl(static_cast<size_t>(len));
+  std::vector<float> pr(static_cast<size_t>(len));
+  for (int i = 0; i < len; ++i) {
+    pl[static_cast<size_t>(i)] = captureL_[static_cast<size_t>(i0 + i)];
+    pr[static_cast<size_t>(i)] = captureR_[static_cast<size_t>(i0 + i)];
+  }
+  // Apply stored edits to the preview copy.
+  std::vector<SpectralEdit> edits;
+  bridge->copyEdits(&edits);
+  for (const auto& edit : edits) {
+    const int start = static_cast<int>((edit.startTime - captureStart_) * sr);
+    const int count = static_cast<int>(edit.left.size());
+    for (int i = 0; i < count; ++i) {
+      const int at = start + i - i0;
+      if (at >= 0 && at < len) {
+        pl[static_cast<size_t>(at)] = edit.left[static_cast<size_t>(i)];
+        pr[static_cast<size_t>(at)] = edit.right[static_cast<size_t>(i)];
+      }
+    }
+  }
+  // Short fades make the loop boundary inaudible.
+  const int fade = std::min(len / 2, static_cast<int>(0.005f * sr));
+  for (int i = 0; i < fade; ++i) {
+    const float g = static_cast<float>(i) / std::max(1, fade);
+    pl[static_cast<size_t>(i)] *= g;
+    pr[static_cast<size_t>(i)] *= g;
+    pl[static_cast<size_t>(len - 1 - i)] *= g;
+    pr[static_cast<size_t>(len - 1 - i)] *= g;
+  }
+  bridge->setPreview(pl.data(), pr.data(), len);
+}
+
+void Panel::matchEdits(Shared& shared, PanelState& state) {
+  auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
+  if (!bridge || lastEditL_.empty() || !state.specValid ||
+      state.specW <= 0 || state.specH <= 0) {
+    return;
+  }
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double total = static_cast<double>(captureL_.size()) / sr;
+  const int durationFrames = static_cast<int>(lastEditL_.size());
+  const double duration = static_cast<double>(durationFrames) / sr;
+  if (total <= 0.0 || duration <= 0.0) {
+    return;
+  }
+  // Template energy in the selected band.
+  const int row0 = static_cast<int>((std::min(state.selY0, state.selY1) -
+                                     kSpecY) / kSpecH * state.specH);
+  const int row1 = static_cast<int>((std::max(state.selY0, state.selY1) -
+                                     kSpecY) / kSpecH * state.specH);
+  const int r0 = std::clamp(std::min(row0, row1), 0, state.specH - 1);
+  const int r1 = std::clamp(std::max(row0, row1), 0, state.specH - 1);
+  const int col0 = static_cast<int>(
+      (plotTime(state, std::min(state.selX0, state.selX1)) -
+       state.specStartTime) / std::max(1.0e-9, total) * state.specW);
+  const int col1 = static_cast<int>(
+      (plotTime(state, std::max(state.selX0, state.selX1)) -
+       state.specStartTime) / std::max(1.0e-9, total) * state.specW);
+  double target = 0.0;
+  int samples = 0;
+  for (int c = std::max(0, col0); c <= std::min(state.specW - 1, col1); ++c) {
+    for (int r = r0; r <= r1; ++r) {
+      target += std::pow(10.0, specMag_[static_cast<size_t>(r * state.specW + c)] / 20.0);
+      ++samples;
+    }
+  }
+  if (samples == 0 || target <= 0.0) {
+    return;
+  }
+  target /= samples;
+  std::vector<double> columns(static_cast<size_t>(state.specW), 0.0);
+  for (int c = 0; c < state.specW; ++c) {
+    double e = 0.0;
+    for (int r = r0; r <= r1; ++r) {
+      e += std::pow(10.0, specMag_[static_cast<size_t>(r * state.specW + c)] / 20.0);
+    }
+    columns[static_cast<size_t>(c)] = e / std::max(1, r1 - r0 + 1);
+  }
+  std::vector<SpectralEdit> added;
+  double lastTime = -1.0e9;
+  for (int c = 2; c < state.specW - 2; ++c) {
+    const double e = columns[static_cast<size_t>(c)];
+    if (e < target * 0.8) {
+      continue;
+    }
+    if (e < columns[static_cast<size_t>(c - 1)] ||
+        e < columns[static_cast<size_t>(c + 1)]) {
+      continue;
+    }
+    const double t = state.specStartTime +
+                     static_cast<double>(c) / state.specW * total;
+    if (t < state.specStartTime + duration * 1.2 ||
+        t + duration > state.specStartTime + total ||
+        t - lastTime < duration * 1.2) {
+      continue;
+    }
+    SpectralEdit edit;
+    edit.startTime = t;
+    edit.endTime = t + duration;
+    edit.left = lastEditL_;
+    edit.right = lastEditR_;
+    added.push_back(std::move(edit));
+    lastTime = t;
+    if (added.size() >= 8) {
+      break;
+    }
+  }
+  if (added.empty()) {
+    return;
+  }
+  pushUndo(shared);
+  for (const auto& edit : added) {
+    bridge->addEdit(edit.startTime, edit.endTime, edit.left.data(),
+                    edit.right.data(),
+                    static_cast<int>(edit.left.size()));
+  }
+  state.editCount = bridge->editCount();
+  diffValid_ = false;
+  if (state.previewMode) {
+    setPreview(shared, state);
+  }
+}
+
+void Panel::rebuildDiff(Shared& shared, PanelState& state) {
+  auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
+  if (!bridge || !state.specValid || state.specW <= 0 || state.specH <= 0 ||
+      captureL_.empty()) {
+    diffValid_ = false;
+    return;
+  }
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  editedL_ = captureL_;
+  editedR_ = captureR_;
+  std::vector<SpectralEdit> edits;
+  bridge->copyEdits(&edits);
+  for (const auto& edit : edits) {
+    const int start = static_cast<int>((edit.startTime - captureStart_) * sr);
+    const int count = static_cast<int>(edit.left.size());
+    for (int i = 0; i < count; ++i) {
+      const int at = start + i;
+      if (at >= 0 && at < static_cast<int>(editedL_.size())) {
+        editedL_[static_cast<size_t>(at)] = edit.left[static_cast<size_t>(i)];
+        editedR_[static_cast<size_t>(at)] = edit.right[static_cast<size_t>(i)];
+      }
+    }
+  }
+  std::vector<float> editedMag;
+  buildMagnitude(editedL_, editedR_, &editedMag, sr);
+  if (editedMag.size() != specMag_.size()) {
+    diffValid_ = false;
+    return;
+  }
+  diffPixels_.assign(static_cast<size_t>(state.specW) * state.specH,
+                     0xff080b0eu);
+  for (size_t i = 0; i < specMag_.size(); ++i) {
+    const float diff = std::fabs(specMag_[i] - editedMag[i]);
+    float e = std::clamp(diff / 30.0f, 0.0f, 1.0f);
+    e = std::pow(e, 0.7f);
+    const uint32_t rr =
+        static_cast<uint32_t>((0.02 + 0.93 * e) * 255.0);
+    const uint32_t gg =
+        static_cast<uint32_t>((0.03 + 0.58 * e) * 255.0);
+    const uint32_t bb =
+        static_cast<uint32_t>((0.04 + 0.12 * e) * 255.0);
+    diffPixels_[i] = 0xff000000u | (rr << 16) | (gg << 8) | bb;
+  }
+  diffValid_ = true;
+  diffEditCount_ = state.editCount;
+}
+
+void Panel::fillSelectionMask(PanelState& state) {
+  if (state.specW <= 0 || state.specH <= 0) {
+    return;
+  }
+  if (state.specMask.size() !=
+      static_cast<size_t>(state.specW) * state.specH) {
+    state.specMask.assign(static_cast<size_t>(state.specW) * state.specH, 0);
+  } else {
+    std::fill(state.specMask.begin(), state.specMask.end(), 0);
+  }
+  const double x0 = std::clamp(std::min(state.selX0, state.selX1), kSpecX,
+                               kSpecX + kSpecW);
+  const double x1 = std::clamp(std::max(state.selX0, state.selX1), kSpecX,
+                               kSpecX + kSpecW);
+  const double y0 = std::clamp(std::min(state.selY0, state.selY1), kSpecY,
+                               kSpecY + kSpecH);
+  const double y1 = std::clamp(std::max(state.selY0, state.selY1), kSpecY,
+                               kSpecY + kSpecH);
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double total =
+      static_cast<double>(captureL_.size()) / static_cast<double>(sr);
+  const int c0 = static_cast<int>(
+      (plotTime(state, x0) - state.specStartTime) / std::max(1.0e-9, total) *
+      state.specW);
+  const int c1 = static_cast<int>(
+      (plotTime(state, x1) - state.specStartTime) / std::max(1.0e-9, total) *
+      state.specW);
+  const int r0 = static_cast<int>((y0 - kSpecY) / kSpecH * state.specH);
+  const int r1 = static_cast<int>((y1 - kSpecY) / kSpecH * state.specH);
+  for (int r = std::max(0, r0); r <= std::min(state.specH - 1, r1); ++r) {
+    for (int c = std::max(0, c0); c <= std::min(state.specW - 1, c1); ++c) {
+      state.specMask[static_cast<size_t>(r * state.specW + c)] = 1;
+    }
+  }
+  state.hasSelection = true;
+  updateSelectionBoundsFromMask(state);
+}
+
+void Panel::paintBrush(PanelState& state, double x, double y) {
+  if (state.specW <= 0 || state.specH <= 0) {
+    return;
+  }
+  if (state.specMask.size() !=
+      static_cast<size_t>(state.specW) * state.specH) {
+    state.specMask.assign(static_cast<size_t>(state.specW) * state.specH, 0);
+  }
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double total =
+      static_cast<double>(captureL_.size()) / static_cast<double>(sr);
+  const int cx = static_cast<int>(
+      (plotTime(state, x) - state.specStartTime) / std::max(1.0e-9, total) *
+      state.specW);
+  const int cy = static_cast<int>((y - kSpecY) / kSpecH * state.specH);
+  const int radius = 5;
+  for (int r = cy - radius; r <= cy + radius; ++r) {
+    if (r < 0 || r >= state.specH) {
+      continue;
+    }
+    for (int c = cx - radius; c <= cx + radius; ++c) {
+      if (c < 0 || c >= state.specW) {
+        continue;
+      }
+      const int dx = c - cx;
+      const int dy = r - cy;
+      if (dx * dx + dy * dy <= radius * radius) {
+        state.specMask[static_cast<size_t>(r * state.specW + c)] = 1;
+      }
+    }
+  }
+  state.hasSelection = true;
+  state.selecting = true;
+  updateSelectionBoundsFromMask(state);
+}
+
+void Panel::selectLasso(PanelState& state) {
+  if (state.specW <= 0 || state.specH <= 0 || lassoPoints_.size() < 3) {
+    return;
+  }
+  if (state.specMask.size() !=
+      static_cast<size_t>(state.specW) * state.specH) {
+    state.specMask.assign(static_cast<size_t>(state.specW) * state.specH, 0);
+  }
+  std::vector<std::pair<double, double>> pts;
+  pts.reserve(lassoPoints_.size());
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double total =
+      static_cast<double>(captureL_.size()) / static_cast<double>(sr);
+  for (const auto& p : lassoPoints_) {
+    const int col = static_cast<int>(
+        (plotTime(state, p.first) - state.specStartTime) /
+        std::max(1.0e-9, total) * state.specW);
+    pts.emplace_back(col, (p.second - kSpecY) / kSpecH * state.specH);
+  }
+  int minC = state.specW;
+  int maxC = 0;
+  int minR = state.specH;
+  int maxR = 0;
+  for (const auto& p : pts) {
+    minC = std::min(minC, static_cast<int>(p.first));
+    maxC = std::max(maxC, static_cast<int>(p.first));
+    minR = std::min(minR, static_cast<int>(p.second));
+    maxR = std::max(maxR, static_cast<int>(p.second));
+  }
+  for (int r = std::max(0, minR); r <= std::min(state.specH - 1, maxR); ++r) {
+    for (int c = std::max(0, minC); c <= std::min(state.specW - 1, maxC); ++c) {
+      bool inside = false;
+      for (size_t i = 0, j = pts.size() - 1; i < pts.size(); j = i++) {
+        const double xi = pts[i].first;
+        const double yi = pts[i].second;
+        const double xj = pts[j].first;
+        const double yj = pts[j].second;
+        if (((yi > r) != (yj > r)) &&
+            (c < (xj - xi) * (r - yi) / (yj - yi + 1.0e-12) + xi)) {
+          inside = !inside;
+        }
+      }
+      if (inside) {
+        state.specMask[static_cast<size_t>(r * state.specW + c)] = 1;
+      }
+    }
+  }
+  state.hasSelection = true;
+  updateSelectionBoundsFromMask(state);
+}
+
+void Panel::updateSelectionBoundsFromMask(PanelState& state) {
+  if (state.specW <= 0 || state.specH <= 0 ||
+      state.specMask.size() !=
+          static_cast<size_t>(state.specW) * state.specH) {
+    return;
+  }
+  int minC = state.specW;
+  int maxC = -1;
+  int minR = state.specH;
+  int maxR = -1;
+  for (int r = 0; r < state.specH; ++r) {
+    for (int c = 0; c < state.specW; ++c) {
+      if (state.specMask[static_cast<size_t>(r * state.specW + c)]) {
+        minC = std::min(minC, c);
+        maxC = std::max(maxC, c);
+        minR = std::min(minR, r);
+        maxR = std::max(maxR, r);
+      }
+    }
+  }
+  if (maxC < 0) {
+    return;
+  }
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double total =
+      static_cast<double>(captureL_.size()) / static_cast<double>(sr);
+  const double t0 = state.specStartTime +
+                    static_cast<double>(minC) / state.specW * total;
+  const double t1 = state.specStartTime +
+                    static_cast<double>(maxC + 1) / state.specW * total;
+  state.selX0 = timeToX(state, t0);
+  state.selX1 = timeToX(state, t1);
+  state.selY0 = kSpecY + static_cast<double>(minR) / state.specH * kSpecH;
+  state.selY1 = kSpecY + static_cast<double>(maxR + 1) / state.specH * kSpecH;
 }
 
 void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
@@ -583,20 +1160,30 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
   const bool bridgeAvailable =
       shared.spectralBridge.load(std::memory_order_relaxed) != nullptr;
   // Title
-  text(cr, "SPECTRAL REPAIR", kSpecX, 172, 18, 0, kText.r, kText.g, kText.b);
+  text(cr, state.diffMode ? "SPECTRAL DIFF" : "SPECTRAL REPAIR", kSpecX, 172,
+       18, 0, kText.r, kText.g, kText.b);
 
   // Plot frame
   roundRect(cr, kSpecX, kSpecY, kSpecW, kSpecH, 6);
   setRgb(cr, Rgb{0.02, 0.03, 0.04});
   cairo_fill(cr);
   if (state.specValid && state.specW > 0 && state.specH > 0) {
+    const std::vector<uint32_t>& shown =
+        (state.diffMode && diffValid_) ? diffPixels_ : state.specPixels;
     cairo_surface_t* image = cairo_image_surface_create_for_data(
         reinterpret_cast<unsigned char*>(
-            const_cast<uint32_t*>(state.specPixels.data())),
+            const_cast<uint32_t*>(shown.data())),
         CAIRO_FORMAT_ARGB32, state.specW, state.specH, state.specW * 4);
+    const double zoom = std::max(1.0, state.specZoom);
+    const double srcW = static_cast<double>(state.specW) / zoom;
+    const double srcX =
+        state.specScroll * (static_cast<double>(state.specW) - srcW);
     cairo_save(cr);
+    cairo_rectangle(cr, kSpecX, kSpecY, kSpecW, kSpecH);
+    cairo_clip(cr);
     cairo_translate(cr, kSpecX, kSpecY);
-    cairo_scale(cr, kSpecW / state.specW, kSpecH / state.specH);
+    cairo_scale(cr, kSpecW / std::max(1.0, srcW), kSpecH / state.specH);
+    cairo_translate(cr, -srcX, 0.0);
     cairo_set_source_surface(cr, image, 0, 0);
     cairo_paint(cr);
     cairo_restore(cr);
@@ -625,19 +1212,86 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
     text(cr, label, kSpecX - 8, y + 4, 9, 2, kDim.r, kDim.g, kDim.b);
   }
 
-  // Selection.
-  if (state.selecting || state.hasSelection) {
-    const double x0 = std::min(state.selX0, state.selX1);
-    const double x1 = std::max(state.selX0, state.selX1);
-    const double y0 = std::min(state.selY0, state.selY1);
-    const double y1 = std::max(state.selY0, state.selY1);
+  // Selection.  The mask is drawn as merged cell runs so lasso/brush shapes
+  // stay cheap even at full resolution.
+  if (state.hasSelection && state.specTool == 0) {
+    const double x0 = std::clamp(std::min(state.selX0, state.selX1), kSpecX,
+                                 kSpecX + kSpecW);
+    const double x1 = std::clamp(std::max(state.selX0, state.selX1), kSpecX,
+                                 kSpecX + kSpecW);
+    const double y0 = std::clamp(std::min(state.selY0, state.selY1), kSpecY,
+                                 kSpecY + kSpecH);
+    const double y1 = std::clamp(std::max(state.selY0, state.selY1), kSpecY,
+                                 kSpecY + kSpecH);
     setRgb(cr, kAccent, 0.18);
     cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
     cairo_fill(cr);
-    setRgb(cr, kAccent, 0.9);
-    cairo_set_line_width(cr, 1.4);
+    setRgb(cr, kAccent, 0.85);
+    cairo_set_line_width(cr, 1.3);
     cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
     cairo_stroke(cr);
+  } else if (state.hasSelection && state.specMask.size() ==
+                               static_cast<size_t>(state.specW) * state.specH) {
+    setRgb(cr, kAccent, 0.22);
+    for (int row = 0; row < state.specH; ++row) {
+      int c = 0;
+      while (c < state.specW) {
+        while (c < state.specW &&
+               !state.specMask[static_cast<size_t>(row * state.specW + c)]) {
+          ++c;
+        }
+        if (c >= state.specW) {
+          break;
+        }
+        const int start = c;
+        while (c < state.specW &&
+               state.specMask[static_cast<size_t>(row * state.specW + c)]) {
+          ++c;
+        }
+        const double total =
+            static_cast<double>(captureL_.size()) /
+            (state.sampleRate > 0.0f ? state.sampleRate : 48000.0f);
+        const double t0 = state.specStartTime +
+                          static_cast<double>(start) / state.specW * total;
+        const double t1 = state.specStartTime +
+                          static_cast<double>(c) / state.specW * total;
+        const double x0 = std::clamp(timeToX(state, t0), kSpecX,
+                                     kSpecX + kSpecW);
+        const double x1 = std::clamp(timeToX(state, t1), kSpecX,
+                                     kSpecX + kSpecW);
+        const double y0 = kSpecY + static_cast<double>(row) / state.specH * kSpecH;
+        const double y1 = kSpecY + static_cast<double>(row + 1) / state.specH * kSpecH;
+        cairo_rectangle(cr, x0, y0 - 0.5, std::max(0.5, x1 - x0), y1 - y0 + 0.5);
+        cairo_fill(cr);
+      }
+    }
+  } else if (state.selecting) {
+    if (state.specTool == 1 && lassoPoints_.size() > 1) {
+      setRgb(cr, kAccent, 0.9);
+      cairo_set_line_width(cr, 1.5);
+      cairo_move_to(cr, lassoPoints_.front().first,
+                    lassoPoints_.front().second);
+      for (const auto& p : lassoPoints_) {
+        cairo_line_to(cr, p.first, p.second);
+      }
+      cairo_stroke(cr);
+    } else if (state.specTool == 0) {
+      const double x0 = std::clamp(std::min(state.selX0, state.selX1), kSpecX,
+                                   kSpecX + kSpecW);
+      const double x1 = std::clamp(std::max(state.selX0, state.selX1), kSpecX,
+                                   kSpecX + kSpecW);
+      const double y0 = std::clamp(std::min(state.selY0, state.selY1), kSpecY,
+                                   kSpecY + kSpecH);
+      const double y1 = std::clamp(std::max(state.selY0, state.selY1), kSpecY,
+                                   kSpecY + kSpecH);
+      setRgb(cr, kAccent, 0.18);
+      cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
+      cairo_fill(cr);
+      setRgb(cr, kAccent, 0.9);
+      cairo_set_line_width(cr, 1.4);
+      cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
+      cairo_stroke(cr);
+    }
   }
 
   // Status line under the plot.
@@ -900,14 +1554,6 @@ bool Panel::hit(const Widget& w, double x, double y) const {
   return x >= w.x && x <= w.x + w.w && y >= w.y && y <= w.y + w.h;
 }
 
-const Panel::Widget* Panel::find(uint32_t param, Kind kind) const {
-  for (const Widget& w : widgets_) {
-    if (w.param == param && w.kind == kind) {
-      return &w;
-    }
-  }
-  return nullptr;
-}
 
 bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
                         bool fine) {
@@ -956,6 +1602,11 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
             captureLoaded_ = false;
             state.specValid = false;
             state.hasSelection = false;
+            state.previewMode = false;
+            if (auto* bridge =
+                    shared.spectralBridge.load(std::memory_order_relaxed)) {
+              bridge->clearPreview();
+            }
           }
         } else if (w.action == 2) {
           const bool learn =
@@ -964,21 +1615,72 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
         } else if (w.action == 3) {
           shared.captureFreeze.store(true, std::memory_order_relaxed);
         } else if (w.action == 4) {
+          pushUndo(shared);
           shared.clearEdits.store(true, std::memory_order_relaxed);
           if (auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed)) {
             bridge->clearEdits();
+            state.editCount = bridge->editCount();
           }
           state.hasSelection = false;
+          diffValid_ = false;
+          if (state.previewMode) {
+            setPreview(shared, state);
+          }
         } else if (w.action == 5) {
           applySpectralEdit(shared, state);
+        } else if (w.action >= 10 && w.action <= 18) {
+          if (w.action <= 12) {
+            state.specTool = w.action - 10;
+            state.specMask.assign(static_cast<size_t>(state.specW) * state.specH,
+                                  0);
+            state.hasSelection = false;
+            lassoPoints_.clear();
+          } else if (w.action == 13) {
+            undo(shared, state);
+          } else if (w.action == 14) {
+            redo(shared, state);
+          } else if (w.action == 15 || w.action == 16) {
+            const double oldZoom = state.specZoom;
+            state.specZoom = std::clamp(
+                state.specZoom * (w.action == 16 ? 1.35 : 0.74), 1.0, 12.0);
+            if (state.specZoom <= 1.001) {
+              state.specScroll = 0.0;
+            }
+            (void)oldZoom;
+          } else if (w.action == 17) {
+            state.diffMode = !state.diffMode;
+            if (state.diffMode) {
+              rebuildDiff(shared, state);
+            }
+          } else if (w.action == 18) {
+            state.previewMode = !state.previewMode;
+            setPreview(shared, state);
+          } else if (w.action == 19) {
+            matchEdits(shared, state);
+          }
         }
         return true;
     }
   }
   if (state.tab == 5 && plotHit(x, y)) {
-    selectionDrag_ = true;
     selectionStartX_ = x;
     selectionStartY_ = y;
+    state.specMask.assign(static_cast<size_t>(state.specW) * state.specH, 0);
+    state.hasSelection = false;
+    if (state.specTool == 2) {
+      paintBrush(state, x, y);
+      selectionDrag_ = true;
+      return true;
+    }
+    if (state.specTool == 1) {
+      lassoPoints_.clear();
+      lassoPoints_.emplace_back(x, y);
+      selectionDrag_ = true;
+      state.selecting = true;
+      state.hasSelection = false;
+      return true;
+    }
+    selectionDrag_ = true;
     state.selX0 = state.selX1 = x;
     state.selY0 = state.selY1 = y;
     state.selecting = true;
@@ -990,9 +1692,12 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
 
 bool Panel::contextDown(Shared& shared, PanelState& state, double x, double y) {
   (void)shared;
-  (void)state;
-  (void)x;
-  (void)y;
+  if (state.tab == 5 && plotHit(x, y) && state.specZoom > 1.001) {
+    plotPan_ = true;
+    panStartX_ = x;
+    panStartScroll_ = state.specScroll;
+    return true;
+  }
   return false;
 }
 
@@ -1007,9 +1712,37 @@ bool Panel::keyEvent(Shared& shared, PanelState& state, int key,
 
 bool Panel::pointerMove(Shared& shared, PanelState& state, double x, double y,
                         bool fine) {
+  if (plotPan_) {
+    const double total =
+        static_cast<double>(captureL_.size()) /
+        (state.sampleRate > 0.0f ? state.sampleRate : 48000.0f);
+    if (total > 0.0 && state.specZoom > 1.001) {
+      const double delta = (x - panStartX_) / kSpecW / state.specZoom;
+      state.specScroll =
+          std::clamp(panStartScroll_ - delta, 0.0, 1.0);
+    }
+    return true;
+  }
   if (selectionDrag_) {
-    state.selX1 = std::clamp(x, kSpecX, kSpecX + kSpecW);
-    state.selY1 = std::clamp(y, kSpecY, kSpecY + kSpecH);
+    const double cx = std::clamp(x, kSpecX, kSpecX + kSpecW);
+    const double cy = std::clamp(y, kSpecY, kSpecY + kSpecH);
+    if (state.specTool == 2) {
+      paintBrush(state, cx, cy);
+      return true;
+    }
+    if (state.specTool == 1) {
+      if (!lassoPoints_.empty() &&
+          std::hypot(cx - lassoPoints_.back().first,
+                     cy - lassoPoints_.back().second) > 2.0) {
+        lassoPoints_.emplace_back(cx, cy);
+      }
+      state.selX1 = cx;
+      state.selY1 = cy;
+      state.selecting = true;
+      return true;
+    }
+    state.selX1 = cx;
+    state.selY1 = cy;
     state.selecting = true;
     return true;
   }
@@ -1032,16 +1765,57 @@ bool Panel::pointerMove(Shared& shared, PanelState& state, double x, double y,
 void Panel::pointerUp(Shared& shared, PanelState& state) {
   (void)shared;
   dragParam_ = -1;
+  plotPan_ = false;
   if (selectionDrag_) {
     selectionDrag_ = false;
     state.selecting = false;
-    state.hasSelection = std::fabs(state.selX1 - state.selX0) > 4.0 &&
-                         std::fabs(state.selY1 - state.selY0) > 4.0;
+    if (state.specTool == 0) {
+      if (std::fabs(state.selX1 - state.selX0) > 4.0 &&
+          std::fabs(state.selY1 - state.selY0) > 4.0) {
+        fillSelectionMask(state);
+      }
+    } else if (state.specTool == 1) {
+      selectLasso(state);
+    }
+    bool any = false;
+    for (uint8_t v : state.specMask) {
+      any = any || v != 0;
+      if (any) {
+        break;
+      }
+    }
+    state.hasSelection = any;
+    if (state.previewMode) {
+      setPreview(shared, state);
+    }
   }
 }
 
 bool Panel::wheel(Shared& shared, PanelState& state, double x, double y,
                   double dy) {
+  if (state.tab == 5 && plotHit(x, y)) {
+    const double total =
+        static_cast<double>(captureL_.size()) /
+        (state.sampleRate > 0.0f ? state.sampleRate : 48000.0f);
+    if (total <= 0.0) {
+      return true;
+    }
+    const double anchor = plotTime(state, x);
+    const double oldZoom = state.specZoom;
+    state.specZoom = std::clamp(
+        state.specZoom * (dy > 0 ? 1.25 : 0.8), 1.0, 12.0);
+    if (state.specZoom <= 1.001) {
+      state.specScroll = 0.0;
+    } else if (state.specZoom != oldZoom) {
+      const double view = total / state.specZoom;
+      const double start =
+          anchor - (x - kSpecX) / kSpecW * view;
+      state.specScroll = std::clamp(
+          (start - state.specStartTime) / std::max(1.0e-9, total - view),
+          0.0, 1.0);
+    }
+    return true;
+  }
   for (const Widget& w : widgets_) {
     if (w.kind != Kind::Knob || !hit(w, x, y)) {
       continue;

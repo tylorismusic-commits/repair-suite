@@ -368,6 +368,12 @@ LV2UI_Handle uiInstantiate(const LV2UI_Descriptor*, const char* /*pluginUri*/,
 
 void uiCleanup(LV2UI_Handle handle) {
   auto* ui = static_cast<Ui*>(handle);
+  if (ui) {
+    if (auto* bridge =
+            ui->shared.spectralBridge.load(std::memory_order_relaxed)) {
+      bridge->clearPreview();
+    }
+  }
   if (ui && ui->write) {
     const float zero = 0.0f;
     ui->write(ui->controller, kFirstParam + repair::P_COUNT, sizeof(float), 0,

@@ -760,8 +760,8 @@ as audition-only in the first alpha.
   load in CLAP and LV2.
 - Build the STFT and its tests; wire a pass-through engine and empty panel.
 - [x] Noise-profile state blob and round-trip test.
-- [ ] Spectral-edit state blob.
-- Prototype host-transport capture/overlay before building the spectral UI.
+- [x] Spectral-edit state blob.
+- [x] Host-transport capture/overlay prototype and editor bridge.
 
 ### Phase 1 — first audible alpha (2–3 weeks)
 
@@ -770,8 +770,8 @@ as audition-only in the first alpha.
   come.
 - [x] De-Click click/crackle detection with median-residual detection and
   cubic repair.  AR repair and thump/dropout modes still to come.
-- [x] De-Hum notch + automatic 50/60 Hz harmonic scoring.  Precision
-  re-synthesis mode is still scaffolded.
+- [x] De-Hum notch + automatic 50/60 Hz harmonic scoring.
+- [x] Precision hum mode (adaptive harmonic cancellation).
 - [x] De-Noise learn + spectral subtraction + transient hold.  Adaptive
   profile tracking and tonal split still to come.
 - [x] De-Reverb late-tail reduction sharing the De-Noise STFT.  Music-mode
@@ -787,16 +787,18 @@ as audition-only in the first alpha.
 - [x] Attenuate, Erase, Interpolate and Amplify (basic spectral band edit).
 - [x] Timeline anchoring via CLAP transport / LV2 time; the engine overlays
   stored replacement PCM.
-- [ ] Lasso/brush selection, zoom/scroll.
+- [x] Lasso/brush selection, zoom/scroll.
 - [x] Spectral-edit state blob in CLAP and LV2 state.
-- [ ] Undo/redo.
-- [ ] Preview loop and original/processed difference display.
+- [x] Undo/redo.
+- [x] Preview loop and original/processed difference display.
 - [ ] Stale-timeline warning.
 
 ### Phase 3 — completeness and release polish
 
-- Patch/Copy, Repair and Amplify spectral tools.
-- Precision hum mode and Auto Analyze.
+- [x] Patch/Copy, Repair and Amplify spectral tools.
+- [x] Basic Match (repeat the last repair at similar band events).
+- [x] Precision hum mode.
+- [ ] Auto Analyze.
 - CPU pass, low-latency denoise mode, state-size limits.
 - Preset tuning against the manual test matrix.
 - Documentation, screenshots, release packaging, CI matrix.
@@ -805,7 +807,7 @@ as audition-only in the first alpha.
 ### Later
 
 - WPE-based speech de-reverb mode, only if the spectral mode leaves a clear gap.
-- Spectral match/find-similar-events.
+- Advanced match/find-similar-events (the basic repeat-match is in 0.1).
 - ARA 2 via a separate VST3 build, if Linux host support makes it worthwhile.
 - Optional RNNoise-class neural denoise as a separate model, clearly labelled
   and never required.

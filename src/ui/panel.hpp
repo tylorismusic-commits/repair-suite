@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "params.hpp"
+#include "dsp/spectral_bridge.hpp"
 
 namespace repair {
 
@@ -48,6 +49,12 @@ struct PanelState {
   double selY0 = 0.0;
   double selX1 = 0.0;
   double selY1 = 0.0;
+  std::vector<uint8_t> specMask;
+  int specTool = 0;  // 0 rect, 1 lasso, 2 brush
+  double specZoom = 1.0;
+  double specScroll = 0.0;
+  bool diffMode = false;
+  bool previewMode = false;
   static constexpr int kHistory = 240;
   float inHistory[kHistory] = {};
   int inHistoryHead = 0;
@@ -114,15 +121,31 @@ private:
                         const PanelState& state) const;
   void loadCapture(Shared& shared, PanelState& state);
   void buildSpectrogram(PanelState& state);
+  void buildMagnitude(const std::vector<float>& left,
+                      const std::vector<float>& right,
+                      std::vector<float>* mag, float sampleRate) const;
   bool applySpectralEdit(Shared& shared, PanelState& state);
   bool plotHit(double x, double y) const;
   void selectionTimes(const PanelState& state, double* t0, double* t1,
                       double* f0, double* f1) const;
+  void pushUndo(Shared& shared);
+  void undo(Shared& shared, PanelState& state);
+  void redo(Shared& shared, PanelState& state);
+  void setPreview(Shared& shared, PanelState& state);
+  void matchEdits(Shared& shared, PanelState& state);
+  void rebuildDiff(Shared& shared, PanelState& state);
+  double plotTime(const PanelState& state, double x) const;
+  double plotHz(double y) const;
+  double timeToX(const PanelState& state, double t) const;
+  double hzToY(double hz) const;
+  void fillSelectionMask(PanelState& state);
+  void paintBrush(PanelState& state, double x, double y);
+  void selectLasso(PanelState& state);
+  void updateSelectionBoundsFromMask(PanelState& state);
   void text(cairo_t* cr, const char* s, double x, double y, double size,
             int align, double r, double g, double b) const;
 
   bool hit(const Widget& w, double x, double y) const;
-  const Widget* find(uint32_t param, Kind kind) const;
   void addKnob(uint32_t param, double x, double y, double r);
   void addToggle(uint32_t param, double x, double y, double w, double h,
                  const char* label);
@@ -136,11 +159,8 @@ private:
   double dragStartY_ = 0.0;
   double dragStartValue_ = 0.0;
   bool editing_ = false;
-  uint32_t editParam_ = 0;
   double editBoxX_ = 0.0;
   double editBoxY_ = 0.0;
-  double lastClickTime_ = -1.0e9;
-  int lastClickParam_ = -1;
   std::vector<float> captureL_;
   std::vector<float> captureR_;
   double captureStart_ = 0.0;
@@ -148,6 +168,20 @@ private:
   bool selectionDrag_ = false;
   double selectionStartX_ = 0.0;
   double selectionStartY_ = 0.0;
+  bool plotPan_ = false;
+  double panStartX_ = 0.0;
+  double panStartScroll_ = 0.0;
+  std::vector<std::pair<double, double>> lassoPoints_;
+  std::vector<std::vector<SpectralEdit>> undoStack_;
+  std::vector<std::vector<SpectralEdit>> redoStack_;
+  std::vector<float> editedL_;
+  std::vector<float> editedR_;
+  std::vector<uint32_t> diffPixels_;
+  std::vector<float> lastEditL_;
+  std::vector<float> lastEditR_;
+  std::vector<float> specMag_;
+  bool diffValid_ = false;
+  int diffEditCount_ = -1;
 
   cairo_font_face_t* font_ = nullptr;
   void* ft_ = nullptr;
