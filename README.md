@@ -9,7 +9,7 @@ de-hum, de-noise, de-reverb and selection-based spectral repair, in one fixed
 chain with per-stage bypass. Planned as the restoration counterpart to Comp
 Suite, Vocal Suite and Space Suite.
 
-![Phase 0 panel](docs/phase0-panel.png)
+![Phase 0 panel](docs/panel.png)
 
 ## What works today
 

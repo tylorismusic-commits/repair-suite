@@ -1,12 +1,17 @@
 # Repair Suite — Research and Plan
 
-Status: Phase 0 scaffold complete · 2026-11-17
+Status: Phase 1 automatic chain complete · 2026-11-17
 Target: first public alpha `0.1.0-alpha.1` for Linux x86_64, CLAP + LV2
 Licence: GPL-3.0-or-later
 
 ---
 
-## Phase 0 status (2026-11-17)
+## Phase 1 status (2026-11-17)
+
+All five automatic repair modules are now wired into the chain: De-Clip,
+De-Click, De-Hum, De-Noise and De-Reverb.  The spectral editor, precision
+re-synthesis and adaptive/tonal refinements remain.
+
 
 - [x] Copy the suite scaffold and rename it to Repair Suite.
 - [x] CLAP + LV2 bundles build and load in host smoke tests.
