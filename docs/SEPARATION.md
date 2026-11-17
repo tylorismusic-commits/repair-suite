@@ -19,10 +19,17 @@ the cymbals or bass.
 
 ## Demucs backend
 
+On distributions that mark Python as externally managed, use the managed venv
+that `repair-separate` detects automatically:
+
 ```sh
-python3 -m pip install --user demucs
+python3 -m venv ~/.local/share/repair-suite/venv
+~/.local/share/repair-suite/venv/bin/pip install demucs numpy
 repair-separate song.wav ~/stems
 ```
+
+If you already have a normal Python environment, `python3 -m pip install demucs
+numpy` is enough.
 
 Useful options:
 

@@ -30,10 +30,29 @@ import subprocess
 import sys
 from pathlib import Path
 
-import numpy as np
-
 DEFAULT_STEMS = ("vocals", "drums", "bass", "other")
 ALL_STEMS = DEFAULT_STEMS + ("instrumental",)
+
+
+def maybe_use_managed_venv() -> None:
+    """Use the per-user Demucs venv when one exists.
+
+    Python packages are often installed in a venv on externally managed
+    distributions.  The installed `repair-separate` script should work from a
+    normal shell without asking the user to activate that venv first.
+    """
+    if os.environ.get("REPAIR_SEPARATE_REEXEC"):
+        return
+    default = Path.home() / ".local" / "share" / "repair-suite" / "venv"
+    venv = Path(os.environ.get("REPAIR_SEPARATE_VENV", str(default))).expanduser()
+    python = venv / "bin" / "python"
+    if not python.is_file():
+        return
+    if Path(sys.prefix).resolve() == venv.resolve():
+        return
+    os.environ["REPAIR_SEPARATE_REEXEC"] = "1"
+    os.execv(str(python), [str(python), str(Path(__file__).resolve()),
+                           *sys.argv[1:]])
 
 
 def have_module(name: str) -> bool:
@@ -92,6 +111,8 @@ def read_wav(path: Path) -> tuple[np.ndarray, int]:
     """Read PCM WAV as float32 [frames, channels]."""
     import wave
 
+    import numpy as np
+
     with wave.open(str(path), "rb") as wav:
         channels = wav.getnchannels()
         width = wav.getsampwidth()
@@ -121,6 +142,8 @@ def write_wav(path: Path, data: np.ndarray, rate: int) -> None:
     """Write float32 [frames, channels] as 16-bit PCM WAV."""
     import wave
 
+    import numpy as np
+
     pcm = np.clip(data, -1.0, 1.0)
     pcm = (pcm * 32767.0).astype("<i2")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -132,6 +155,8 @@ def write_wav(path: Path, data: np.ndarray, rate: int) -> None:
 
 
 def resample(data: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
+    import numpy as np
+
     if source_rate == target_rate or data.size == 0:
         return data
     out_len = max(1, int(round(data.shape[0] * target_rate / source_rate)))
@@ -200,6 +225,7 @@ def run_onnx(model_path: Path, audio: np.ndarray, model_rate: int,
     [sources, 2, samples].  Spectral ONNX exports are intentionally rejected
     rather than guessed at.
     """
+    import numpy as np
     import onnxruntime as ort
 
     session = ort.InferenceSession(
@@ -262,6 +288,7 @@ def copy_stems(root: Path, output_dir: Path, stem_names: list[str],
 
 
 def main(argv: list[str] | None = None) -> int:
+    maybe_use_managed_venv()
     parser = argparse.ArgumentParser(
         prog="repair-separate",
         description=(
@@ -362,6 +389,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.two_stems:
             wanted = [args.two_stems, "instrumental"]
         if "instrumental" in wanted and "instrumental" not in stems:
+            import numpy as np
+
             keep = args.two_stems or "vocals"
             stems["instrumental"] = sum(
                 (value for key, value in stems.items() if key != keep),

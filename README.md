@@ -98,7 +98,8 @@ bass and other stems, using Demucs or a user-supplied time-domain ONNX model.
 Bring the stems back into the DAW for repair or remixing.
 
 ```sh
-python3 -m pip install --user demucs
+python3 -m venv ~/.local/share/repair-suite/venv
+~/.local/share/repair-suite/venv/bin/pip install demucs numpy
 repair-separate song.wav ~/stems
 repair-separate interview.wav ~/stems --two-stems vocals
 ```
