@@ -5,6 +5,26 @@ model inside the CLAP/LV2 audio thread.  Source separation is non-causal and
 needs seconds of context, so it runs **offline** in the companion
 `repair-separate` tool.
 
+## GUI
+
+Launch the standalone GUI:
+
+```sh
+repair-stems
+```
+
+Choose an input mix, an output folder and a backend.  The GUI supports drag and
+drop, WAV/FLAC/MP3/OGG input through ffmpeg, a live log, progress, quality
+shifts, CPU/CUDA selection and a two-stem mode.  It runs the same
+`repair-separate` companion underneath, so the plug-in remains real-time and
+the heavy model stays out of the audio thread.
+
+Requirements: PySide6.  On Arch:
+
+```sh
+sudo pacman -S pyside6
+```
+
 ## What it produces
 
 - `vocals.wav`

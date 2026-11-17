@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Repair Suite Stems
+Comment=Offline four-stem separation for Repair Suite
+Exec=repair-stems
+Icon=audio-x-generic
+Terminal=false
+Categories=AudioVideo;Audio;
+Keywords=repair;stems;separation;demucs;vocals;drums;bass;

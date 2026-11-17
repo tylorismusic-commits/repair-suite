@@ -13,6 +13,8 @@ language as Comp Suite, Vocal Suite and Space Suite.
 
 ![Auto Analyze page](docs/analyze.png)
 
+![Repair Suite Stems](docs/stems.png)
+
 ## Signal chain
 
 ```
@@ -93,9 +95,14 @@ Installs to:
 ## Offline ML source separation
 
 The real-time plug-in deliberately does not embed a Demucs-class model.  The
-companion `repair-separate` tool separates a WAV offline into vocals, drums,
-bass and other stems, using Demucs or a user-supplied time-domain ONNX model.
-Bring the stems back into the DAW for repair or remixing.
+standalone **Repair Suite Stems** app and the `repair-separate` CLI separate a
+mix offline into vocals, drums, bass and other stems, using Demucs or a
+user-supplied time-domain ONNX model.  Bring the stems back into the DAW for
+repair or remixing.
+
+```sh
+repair-stems          # standalone PySide6 GUI
+```
 
 ```sh
 python3 -m venv ~/.local/share/repair-suite/venv

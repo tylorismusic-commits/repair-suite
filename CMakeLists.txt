@@ -217,10 +217,25 @@ if(Python3_FOUND)
   add_test(NAME repair_separate_help
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/repair_separate.py"
             --help)
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c "import PySide6"
+    RESULT_VARIABLE REPAIR_PYSIDE6_RESULT
+    OUTPUT_QUIET ERROR_QUIET)
+  if(REPAIR_PYSIDE6_RESULT EQUAL 0)
+    add_test(NAME repair_stems_gui
+      COMMAND ${Python3_EXECUTABLE}
+              "${CMAKE_SOURCE_DIR}/tools/repair_stems_gui.py" --selftest)
+    set_tests_properties(repair_stems_gui PROPERTIES
+      ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+  endif()
 endif()
 
 install(PROGRAMS tools/repair_separate.py DESTINATION bin
         RENAME repair-separate)
+install(PROGRAMS tools/repair_stems_gui.py DESTINATION bin
+        RENAME repair-stems)
+install(FILES packaging/repair-stems.desktop
+        DESTINATION share/applications)
 
 target_compile_options(repair_engine_test PRIVATE -UNDEBUG)
 
