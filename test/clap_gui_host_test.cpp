@@ -63,6 +63,24 @@ int main(int argc, char** argv) {
   assert(w >= 520 && h >= 320);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
+
+  // The editor must fill the host viewport, even when the host hands over a
+  // size left over from another plug-in.  Otherwise the previous plug-in's
+  // pixels show through below the panel.
+  Window rootRet = 0;
+  Window parentRet = 0;
+  Window* children = nullptr;
+  unsigned int childCount = 0;
+  assert(XQueryTree(dpy, parent, &rootRet, &parentRet, &children,
+                    &childCount) != 0);
+  assert(childCount >= 1);
+  XWindowAttributes childAttrs{};
+  assert(XGetWindowAttributes(dpy, children[childCount - 1], &childAttrs) != 0);
+  assert(childAttrs.width == 1040 && childAttrs.height == 640);
+  if (children) {
+    XFree(children);
+  }
+
   gui->show(plugin);
   std::this_thread::sleep_for(std::chrono::milliseconds(100));
   gui->hide(plugin);

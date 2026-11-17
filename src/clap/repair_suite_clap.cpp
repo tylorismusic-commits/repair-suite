@@ -10,6 +10,7 @@
 #include <dlfcn.h>
 #include <sys/time.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -84,16 +85,22 @@ public:
   // process call and pick up the new values.
   std::function<void()> requestFlush;
 
-  double scale() const { return scale_.load(std::memory_order_relaxed); }
-  UiSize size() const { return sizeForScale(scale()); }
+  double scale() const {
+    return layoutScale(hostW_.load(std::memory_order_relaxed),
+                       hostH_.load(std::memory_order_relaxed));
+  }
+  UiSize size() const {
+    return {hostW_.load(std::memory_order_relaxed),
+            hostH_.load(std::memory_order_relaxed)};
+  }
 
-  // Host thread: record the request only.  All Xlib calls happen on the
-  // editor thread, because Xlib is not thread-safe and calling
-  // XInitThreads() after the host has used Xlib is undefined behaviour
-  // (that made the editor fail to load in REAPER).
-  void resize(double scale) {
-    scale_.store(clampScale(scale), std::memory_order_relaxed);
-    resizePending_.store(true, std::memory_order_relaxed);
+  // Host thread: record the child-window size only.  All Xlib calls happen on
+  // the editor thread, because Xlib is not thread-safe and calling
+  // XInitThreads() after the host has used Xlib is undefined behaviour (that
+  // made the editor fail to load in REAPER).
+  void setSize(uint32_t width, uint32_t height) {
+    hostW_.store(std::clamp(width, 320u, 6000u), std::memory_order_relaxed);
+    hostH_.store(std::clamp(height, 240u, 4000u), std::memory_order_relaxed);
   }
 
   bool open(void* parent) {
@@ -146,6 +153,22 @@ public:
   ~Editor() { close(); }
 
 private:
+  static double layoutScale(uint32_t width, uint32_t height) {
+    const double sx = static_cast<double>(width) / kPanelWidth;
+    const double sy = static_cast<double>(height) / kPanelHeight;
+    return std::clamp(std::min(sx, sy), kMinUiScale, kMaxUiScale);
+  }
+
+  double offsetX() const {
+    const UiSize s = size();
+    return (static_cast<double>(s.width) - kPanelWidth * scale()) * 0.5;
+  }
+
+  double offsetY() const {
+    const UiSize s = size();
+    return (static_cast<double>(s.height) - kPanelHeight * scale()) * 0.5;
+  }
+
   void run() {
     dbg("thread start");
     Display* dpy = XOpenDisplay(nullptr);
@@ -158,6 +181,16 @@ private:
     }
     const int screen = DefaultScreen(dpy);
     const Window parent = parentWindow_ ? parentWindow_ : RootWindow(dpy, screen);
+    if (parentWindow_) {
+      XWindowAttributes pa{};
+      if (XGetWindowAttributes(dpy, parent, &pa) && pa.width >= 320 &&
+          pa.height >= 240) {
+        hostW_.store(static_cast<uint32_t>(pa.width),
+                     std::memory_order_relaxed);
+        hostH_.store(static_cast<uint32_t>(pa.height),
+                     std::memory_order_relaxed);
+      }
+    }
     UiSize current = size();
 
     XSetWindowAttributes attrs{};
@@ -253,7 +286,12 @@ private:
       }
       panel_.tick(shared_, state_);
       cairo_save(cr);
+      cairo_set_source_rgb(cr, 0.043, 0.047, 0.051);
+      cairo_paint(cr);
+      cairo_translate(cr, offsetX(), offsetY());
       cairo_scale(cr, scale(), scale());
+      cairo_rectangle(cr, 0, 0, kPanelWidth, kPanelHeight);
+      cairo_clip(cr);
       panel_.draw(cr, shared_, state_);
       cairo_restore(cr);
       cairo_surface_flush(backing);
@@ -299,11 +337,15 @@ private:
   // Event coordinates are physical pixels; the panel works in logical units.
   void handleEvent(const XEvent& ev) {
     const double s = scale();
+    const double ox = offsetX();
+    const double oy = offsetY();
+    const auto logicalX = [&](int x) { return (x - ox) / s; };
+    const auto logicalY = [&](int y) { return (y - oy) / s; };
     switch (ev.type) {
       case ButtonPress: {
         const bool fine = (ev.xbutton.state & ShiftMask) != 0;
-        const double x = ev.xbutton.x / s;
-        const double y = ev.xbutton.y / s;
+        const double x = logicalX(ev.xbutton.x);
+        const double y = logicalY(ev.xbutton.y);
         if (ev.xbutton.button == Button4) {
           panel_.wheel(shared_, state_, x, y, 1.0);
         } else if (ev.xbutton.button == Button5) {
@@ -340,8 +382,8 @@ private:
       }
       case MotionNotify: {
         const bool fine = (ev.xmotion.state & ShiftMask) != 0;
-        panel_.pointerMove(shared_, state_, ev.xmotion.x / s, ev.xmotion.y / s,
-                           fine);
+        panel_.pointerMove(shared_, state_, logicalX(ev.xmotion.x),
+                           logicalY(ev.xmotion.y), fine);
         break;
       }
       case Expose:
@@ -359,8 +401,8 @@ private:
   Shared& shared_;
   PanelState state_;
   Panel panel_;
-  std::atomic<double> scale_{1.0};
-  std::atomic<bool> resizePending_{false};
+  std::atomic<uint32_t> hostW_{kPanelWidth};
+  std::atomic<uint32_t> hostH_{kPanelHeight};
   std::atomic<bool> showRequested_{false};
   std::mutex mutex_;
   std::condition_variable cv_;
@@ -689,7 +731,8 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
   if (stream->read(stream, &scale, sizeof(scale)) ==
           static_cast<int64_t>(sizeof(scale)) &&
       scale > 0.0) {
-    s->editor.resize(scale);
+    const UiSize sz = sizeForScale(scale);
+    s->editor.setSize(sz.width, sz.height);
   }
   // Optional profile blob.
   uint32_t magic = 0;
@@ -830,7 +873,7 @@ bool guiAdjustSize(const clap_plugin_t*, uint32_t* width, uint32_t* height) {
 }
 
 bool guiSetSize(const clap_plugin_t* p, uint32_t width, uint32_t height) {
-  self(p)->editor.resize(scaleForRequest(width, height));
+  self(p)->editor.setSize(width, height);
   return true;
 }
 
