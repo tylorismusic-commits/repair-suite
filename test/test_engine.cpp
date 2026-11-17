@@ -453,6 +453,50 @@ void testDereverb() {
   }
 }
 
+
+void testProfilePersistence() {
+  repair::Engine engine;
+  engine.prepare(kSr);
+  repair::Controls c;
+  c.noiseOn = true;
+  c.noiseLearn = true;
+  c.noiseReductionDb = 18.0f;
+  engine.setControls(c);
+  repair::Meters meters;
+  const int n = 3 * static_cast<int>(kSr);
+  std::vector<float> l(1024), r(1024);
+  uint32_t seed = 7;
+  for (int start = 0; start < n; start += 1024) {
+    const int len = std::min(1024, n - start);
+    for (int i = 0; i < len; ++i) {
+      seed = seed * 1664525u + 1013904223u;
+      l[static_cast<size_t>(i)] = r[static_cast<size_t>(i)] =
+          0.04f * static_cast<float>(static_cast<int32_t>(seed >> 8)) /
+          8388608.0f;
+    }
+    engine.process(l.data(), r.data(), len, meters,
+                   start / static_cast<double>(kSr), true);
+  }
+  assert(engine.takeProfileReady());
+  float profile[repair::kProfileBins] = {};
+  const int bins = engine.copyNoiseProfile(profile, repair::kProfileBins);
+  assert(bins > 0);
+  double sum = 0.0;
+  for (int i = 0; i < bins; ++i) {
+    sum += profile[i];
+  }
+  assert(sum > 0.0);
+
+  repair::Engine restored;
+  restored.prepare(kSr);
+  assert(restored.loadNoiseProfile(profile, bins));
+  float roundTrip[repair::kProfileBins] = {};
+  assert(restored.copyNoiseProfile(roundTrip, repair::kProfileBins) == bins);
+  for (int i = 0; i < bins; ++i) {
+    assert(std::fabs(roundTrip[i] - profile[i]) < 1.0e-6f);
+  }
+}
+
 void testPresets() {
   for (const repair::Preset& p : repair::factoryPresets()) {
     repair::Shared s;
@@ -486,6 +530,7 @@ int main() {
   testDehum();
   testDenoise();
   testDereverb();
+  testProfilePersistence();
   testPresets();
   std::printf("DSP tests passed\n");
   return 0;

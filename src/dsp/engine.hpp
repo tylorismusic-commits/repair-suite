@@ -166,6 +166,14 @@ public:
   SpectralCapture& capture() noexcept { return capture_; }
   const SpectralCapture& capture() const noexcept { return capture_; }
 
+  bool takeProfileReady() noexcept { return denoise_.takeProfileReady(); }
+  int copyNoiseProfile(float* out, int maxBins) const noexcept {
+    return denoise_.copyProfile(out, maxBins);
+  }
+  bool loadNoiseProfile(const float* data, int bins) noexcept {
+    return denoise_.loadProfile(data, bins);
+  }
+
 private:
   float sr_ = 48000.0f;
   Controls controls_;

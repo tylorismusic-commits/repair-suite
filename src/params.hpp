@@ -238,6 +238,9 @@ inline constexpr ParamSpec kParamSpecs[P_COUNT] = {
 static_assert(sizeof(kParamSpecs) / sizeof(kParamSpecs[0]) == P_COUNT,
               "kParamSpecs must cover every parameter id");
 
+// The shared STFT is 2048 samples, so a noise profile has 1025 bins.
+constexpr int kProfileBins = 1025;
+
 // The control values, meters and one-shot UI actions shared between the audio
 // thread, the host thread and the editor.
 class Shared {
@@ -269,6 +272,12 @@ public:
     captureFreeze.store(false);
     clearCapture.store(false);
     clearEdits.store(false);
+    profileBins.store(0);
+    profileValid.store(false);
+    profilePending.store(false);
+    for (int i = 0; i < kProfileBins; ++i) {
+      noiseProfile[i].store(0.0f);
+    }
   }
 
   double get(uint32_t p) const noexcept {
@@ -317,6 +326,34 @@ public:
     return false;
   }
 
+  // A learned noise profile is binary session state, not a host parameter.
+  // The audio thread publishes it here; state save/load and the UI read it.
+  void setProfile(const float* data, int bins) noexcept {
+    if (!data || bins <= 0) {
+      return;
+    }
+    const int n = std::min(bins, kProfileBins);
+    for (int i = 0; i < n; ++i) {
+      noiseProfile[i].store(std::max(0.0f, data[i]),
+                            std::memory_order_relaxed);
+    }
+    profileBins.store(n, std::memory_order_relaxed);
+    profileValid.store(true, std::memory_order_release);
+    profilePending.store(true, std::memory_order_release);
+  }
+
+  int getProfile(float* out, int maxBins) const noexcept {
+    if (!profileValid.load(std::memory_order_acquire)) {
+      return 0;
+    }
+    const int n = std::min(profileBins.load(std::memory_order_relaxed),
+                           maxBins);
+    for (int i = 0; i < n; ++i) {
+      out[i] = noiseProfile[i].load(std::memory_order_relaxed);
+    }
+    return n;
+  }
+
   std::atomic<float> grDb;
   std::atomic<float> noiseGrDb;
   std::atomic<float> verbGrDb;
@@ -339,6 +376,10 @@ public:
   std::atomic<bool> compare;
   std::atomic<bool> clearCapture;
   std::atomic<bool> clearEdits;
+  std::atomic<float> noiseProfile[kProfileBins];
+  std::atomic<int> profileBins;
+  std::atomic<bool> profileValid;
+  std::atomic<bool> profilePending;
   std::atomic<float> bpm;      // reserved for later tempo-synced capture
   std::atomic<bool> hostTempo;
 

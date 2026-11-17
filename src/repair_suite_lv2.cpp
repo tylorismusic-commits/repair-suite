@@ -7,6 +7,7 @@
 #include <lv2/atom/atom.h>
 #include <lv2/atom/util.h>
 #include <lv2/core/lv2.h>
+#include <lv2/state/state.h>
 #include <lv2/time/time.h>
 #include <lv2/urid/urid.h>
 
@@ -65,6 +66,8 @@ struct Plugin {
   uint32_t uridFloat = 0;
   uint32_t uridDouble = 0;
   uint32_t uridFrame = 0;
+  uint32_t uridStateKey = 0;
+  uint32_t uridChunk = 0;
   double transportSeconds = 0.0;
   bool transportValid = false;
   const LV2_Atom_Sequence* timePort = nullptr;
@@ -123,6 +126,8 @@ LV2_Handle instantiate(const LV2_Descriptor*, double rate, const char*,
     p->uridFloat = p->map->map(p->map->handle, LV2_ATOM__Float);
     p->uridDouble = p->map->map(p->map->handle, LV2_ATOM__Double);
     p->uridFrame = p->map->map(p->map->handle, LV2_TIME__frame);
+    p->uridStateKey = p->map->map(p->map->handle, "urn:repair-suite:noise-profile");
+    p->uridChunk = p->map->map(p->map->handle, LV2_ATOM__Chunk);
   }
   return p;
 }
@@ -260,6 +265,13 @@ void run(LV2_Handle handle, uint32_t frames) {
   p->shared.captureFreeze.store(false, std::memory_order_relaxed);
   p->shared.clearCapture.store(false, std::memory_order_relaxed);
   p->shared.clearEdits.store(false, std::memory_order_relaxed);
+  if (p->shared.profilePending.exchange(false, std::memory_order_acq_rel)) {
+    float profile[repair::kProfileBins] = {};
+    const int bins = p->shared.getProfile(profile, repair::kProfileBins);
+    if (bins > 0) {
+      p->engine.loadNoiseProfile(profile, bins);
+    }
+  }
   if (p->audioOutL != p->audioInL) {
     std::memcpy(p->audioOutL, p->audioInL, frames * sizeof(float));
   }
@@ -269,6 +281,13 @@ void run(LV2_Handle handle, uint32_t frames) {
 
   p->engine.process(p->audioOutL, p->audioOutR, static_cast<int>(frames),
                     p->meters, p->transportSeconds, p->transportValid);
+  if (p->engine.takeProfileReady()) {
+    float profile[repair::kProfileBins] = {};
+    const int bins = p->engine.copyNoiseProfile(profile, repair::kProfileBins);
+    if (bins > 0) {
+      p->shared.setProfile(profile, bins);
+    }
+  }
 
   if (p->compGr) *p->compGr = p->meters.grDb;
   if (p->sibGr) *p->sibGr = p->meters.noiseGrDb;
@@ -306,9 +325,68 @@ repair::InlineDisplaySurface* renderInlineDisplay(void* instance, uint32_t width
 
 const repair::InlineDisplayInterface kInlineDisplay = {&renderInlineDisplay};
 
+LV2_State_Status stateSave(LV2_Handle handle, LV2_State_Store_Function store,
+                            LV2_State_Handle state,
+                            uint32_t /*flags*/,
+                            const LV2_Feature* const* /*features*/) {
+  auto* p = static_cast<Plugin*>(handle);
+  float profile[repair::kProfileBins] = {};
+  const int bins = p->shared.getProfile(profile, repair::kProfileBins);
+  constexpr uint32_t kMagic = 0x52534e31u;  // "RSN1"
+  const int32_t count = bins;
+  const size_t bytes = 8 + static_cast<size_t>(std::max(0, bins)) * sizeof(float);
+  auto* data = static_cast<uint8_t*>(std::malloc(bytes));
+  if (!data) {
+    return LV2_STATE_ERR_NO_SPACE;
+  }
+  std::memcpy(data, &kMagic, sizeof(kMagic));
+  std::memcpy(data + 4, &count, sizeof(count));
+  if (bins > 0) {
+    std::memcpy(data + 8, profile, static_cast<size_t>(bins) * sizeof(float));
+  }
+  const LV2_State_Status st = store(
+      state, p->uridStateKey, data, bytes, p->uridChunk,
+      LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE);
+  std::free(data);
+  return st;
+}
+
+LV2_State_Status stateRestore(LV2_Handle handle, LV2_State_Retrieve_Function retrieve,
+                              LV2_State_Handle state, uint32_t /*flags*/,
+                              const LV2_Feature* const* /*features*/) {
+  auto* p = static_cast<Plugin*>(handle);
+  size_t size = 0;
+  uint32_t type = 0;
+  uint32_t flags = 0;
+  const void* data = retrieve(state, p->uridStateKey, &size, &type, &flags);
+  if (!data || type != p->uridChunk || size < 8) {
+    return LV2_STATE_SUCCESS;
+  }
+  uint32_t magic = 0;
+  int32_t bins = 0;
+  std::memcpy(&magic, data, sizeof(magic));
+  std::memcpy(&bins, static_cast<const uint8_t*>(data) + 4, sizeof(bins));
+  if (magic != 0x52534e31u || bins <= 0 ||
+      bins > repair::kProfileBins ||
+      size < 8 + static_cast<size_t>(bins) * sizeof(float)) {
+    return LV2_STATE_SUCCESS;
+  }
+  const auto* floats = reinterpret_cast<const float*>(
+      static_cast<const uint8_t*>(data) + 8);
+  p->shared.setProfile(floats, bins);
+  // The run loop consumes profilePending on the audio thread; do not touch
+  // Denoise's buffers from the host state thread.
+  return LV2_STATE_SUCCESS;
+}
+
+const LV2_State_Interface kState = {stateSave, stateRestore};
+
 const void* extensionData(const char* uri) {
   if (uri && !std::strcmp(uri, repair::kInlineDisplayInterfaceURI)) {
     return &kInlineDisplay;
+  }
+  if (uri && !std::strcmp(uri, LV2_STATE__interface)) {
+    return &kState;
   }
   return nullptr;
 }

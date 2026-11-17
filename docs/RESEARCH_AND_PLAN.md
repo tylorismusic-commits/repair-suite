@@ -21,7 +21,8 @@ re-synthesis and adaptive/tonal refinements remain.
 - [x] Spectral capture/overlay prototype with host-time anchors and tests.
 - [x] Wire all five automatic repair modules into the chain.
 - [x] CLAP/LV2 UI smoke tests under Xvfb.
-- [ ] Add state blobs for noise profiles and spectral edits.
+- [x] Add the noise-profile state blob (CLAP and LV2 state).
+- [ ] Add spectral-edit state blobs.
 - [ ] Prototype host transport in a real DAW against the capture overlay.
 
 ## 1. Product thesis
@@ -758,8 +759,8 @@ as audition-only in the first alpha.
 - Copy the `vocal-suite` scaffold, rename everything, get an empty plug-in to
   load in CLAP and LV2.
 - Build the STFT and its tests; wire a pass-through engine and empty panel.
-- Decide the state blob formats and write round-trip tests for profile and
-  spectral-edit data.
+- [x] Noise-profile state blob and round-trip test.
+- [ ] Spectral-edit state blob.
 - Prototype host-transport capture/overlay before building the spectral UI.
 
 ### Phase 1 — first audible alpha (2–3 weeks)

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <atomic>
 #include <cstdint>
 #include <vector>
 
@@ -62,6 +63,9 @@ public:
     } else if (!wantLearn && learnControl_) {
       learned_ = learned_ || learnFrames_ > 0;
       learning_ = false;
+      if (learned_) {
+        profileReady_.store(true, std::memory_order_release);
+      }
     }
     learnControl_ = wantLearn;
   }
@@ -69,7 +73,37 @@ public:
   bool learning() const noexcept { return learning_; }
   bool learned() const noexcept { return learned_; }
   int learnFrames() const noexcept { return learnFrames_; }
+  int profileBins() const noexcept { return bins_; }
   float lastReductionDb() const noexcept { return lastReductionDb_; }
+
+  // Called by the host glue when learning completes, so the learned profile
+  // can be published to Shared and saved with the session.
+  bool takeProfileReady() noexcept {
+    return profileReady_.exchange(false, std::memory_order_acq_rel);
+  }
+
+  int copyProfile(float* out, int maxBins) const noexcept {
+    const int n = std::min(bins_, maxBins);
+    for (int i = 0; i < n; ++i) {
+      out[i] = noise_[static_cast<size_t>(i)];
+    }
+    return n;
+  }
+
+  bool loadProfile(const float* data, int bins) noexcept {
+    if (!data || bins != bins_) {
+      return false;
+    }
+    for (int i = 0; i < bins_; ++i) {
+      noise_[static_cast<size_t>(i)] = std::max(0.0f, data[i]);
+    }
+    learned_ = true;
+    learning_ = false;
+    learnFrames_ = learnLimit_;
+    learnControl_ = false;
+    profileReady_.store(false, std::memory_order_relaxed);
+    return true;
+  }
 
   void processBins(float* reL, float* imL, float* reR, float* imR,
                    int bins) noexcept {
@@ -88,6 +122,7 @@ public:
       if (learnFrames_ >= learnLimit_) {
         learning_ = false;
         learned_ = true;
+        profileReady_.store(true, std::memory_order_release);
       }
       return;  // monitor the noise while learning
     }
@@ -142,6 +177,7 @@ private:
   bool learning_ = false;
   bool learned_ = false;
   bool learnControl_ = false;
+  std::atomic<bool> profileReady_{false};
   float mix_ = 1.0f;
   float floorGain_ = 0.1f;
   float smoothCoeff_ = 0.45f;

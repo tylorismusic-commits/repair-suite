@@ -587,8 +587,28 @@ bool stateSave(const clap_plugin_t* p, const clap_ostream_t* stream) {
   const double scale = s->editor.scale();
   const int64_t written = stream->write(stream, values, sizeof(values));
   const int64_t writtenScale = stream->write(stream, &scale, sizeof(scale));
-  return written == static_cast<int64_t>(sizeof(values)) &&
-         writtenScale == static_cast<int64_t>(sizeof(scale));
+  if (written != static_cast<int64_t>(sizeof(values)) ||
+      writtenScale != static_cast<int64_t>(sizeof(scale))) {
+    return false;
+  }
+  // Optional noise-profile blob.  Older states end after the scale.
+  constexpr uint32_t kMagic = 0x52534e31u;  // "RSN1"
+  float profile[repair::kProfileBins] = {};
+  const int bins = s->shared.getProfile(profile, repair::kProfileBins);
+  const int32_t binCount = bins;
+  if (stream->write(stream, &kMagic, sizeof(kMagic)) !=
+          static_cast<int64_t>(sizeof(kMagic)) ||
+      stream->write(stream, &binCount, sizeof(binCount)) !=
+          static_cast<int64_t>(sizeof(binCount))) {
+    return false;
+  }
+  if (bins > 0) {
+    const size_t bytes = static_cast<size_t>(bins) * sizeof(float);
+    if (stream->write(stream, profile, bytes) != static_cast<int64_t>(bytes)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
@@ -604,9 +624,25 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
   noteHostChanges(s);
   // The UI scale is optional, so states saved before it still load.
   double scale = 0.0;
-  if (stream->read(stream, &scale, sizeof(scale)) == static_cast<int64_t>(sizeof(scale)) &&
+  if (stream->read(stream, &scale, sizeof(scale)) ==
+          static_cast<int64_t>(sizeof(scale)) &&
       scale > 0.0) {
     s->editor.resize(scale);
+  }
+  // Optional profile blob.
+  uint32_t magic = 0;
+  int32_t bins = 0;
+  if (stream->read(stream, &magic, sizeof(magic)) ==
+          static_cast<int64_t>(sizeof(magic)) &&
+      magic == 0x52534e31u &&
+      stream->read(stream, &bins, sizeof(bins)) ==
+          static_cast<int64_t>(sizeof(bins)) &&
+      bins > 0 && bins <= repair::kProfileBins) {
+    float profile[repair::kProfileBins] = {};
+    const size_t bytes = static_cast<size_t>(bins) * sizeof(float);
+    if (stream->read(stream, profile, bytes) == static_cast<int64_t>(bytes)) {
+      s->shared.setProfile(profile, bins);
+    }
   }
   return true;
 }
@@ -812,6 +848,13 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   s->shared.captureFreeze.store(false, std::memory_order_relaxed);
   s->shared.clearCapture.store(false, std::memory_order_relaxed);
   s->shared.clearEdits.store(false, std::memory_order_relaxed);
+  if (s->shared.profilePending.exchange(false, std::memory_order_acq_rel)) {
+    float profile[repair::kProfileBins] = {};
+    const int bins = s->shared.getProfile(profile, repair::kProfileBins);
+    if (bins > 0) {
+      s->engine.loadNoiseProfile(profile, bins);
+    }
+  }
 
   double hostTime = 0.0;
   bool hostTimeValid = false;
@@ -822,6 +865,13 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   }
   s->engine.process(left, right, static_cast<int>(frames), s->meters, hostTime,
                     hostTimeValid);
+  if (s->engine.takeProfileReady()) {
+    float profile[repair::kProfileBins] = {};
+    const int bins = s->engine.copyNoiseProfile(profile, repair::kProfileBins);
+    if (bins > 0) {
+      s->shared.setProfile(profile, bins);
+    }
+  }
 
   s->grForHost.store(s->meters.grDb, std::memory_order_relaxed);
   s->shared.grDb.store(s->meters.grDb, std::memory_order_relaxed);

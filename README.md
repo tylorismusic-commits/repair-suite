@@ -25,8 +25,8 @@ Suite, Vocal Suite and Space Suite.
 - **De-Hum** — narrow notch bank with automatic 50/60 Hz harmonic detection,
   odd-only, depth and mix.
 - **De-Noise** — STFT spectral subtraction with a two-second learned noise
-  profile, transient hold, smoothing, reduction and mix. Adaptive mode is
-  scaffolded.
+  profile, transient hold, smoothing, reduction and mix. The profile is saved
+  with the CLAP/LV2 session state.
 - **De-Reverb** — late-tail spectral subtraction with tail length, pre-delay,
   transient protection, tilt and mix, sharing the same STFT pass.
 - Shared real-time STFT: 2048-sample frames, 75% overlap, identity
