@@ -28,6 +28,7 @@
 #include "params.hpp"
 #include "ui/geometry.hpp"
 #include "ui/panel.hpp"
+#include "dsp/repair_instance.hpp"
 
 namespace {
 
@@ -145,7 +146,7 @@ struct Ui {
         break;
       }
       case ButtonRelease:
-        panel.pointerUp(shared);
+        panel.pointerUp(shared, state);
         dirty = true;
         break;
       case MotionNotify: {
@@ -271,6 +272,7 @@ LV2UI_Handle uiInstantiate(const LV2UI_Descriptor*, const char* /*pluginUri*/,
                            LV2UI_Controller controller, LV2UI_Widget* widget,
                            const LV2_Feature* const* features) {
   void* parent = nullptr;
+  void* instance = nullptr;
   const LV2UI_Resize* hostResize = nullptr;
   const float* scaleHint = nullptr;
   for (const LV2_Feature* const* f = features; f && *f; ++f) {
@@ -280,6 +282,9 @@ LV2UI_Handle uiInstantiate(const LV2UI_Descriptor*, const char* /*pluginUri*/,
       hostResize = static_cast<const LV2UI_Resize*>(f[0]->data);
     } else if (!std::strcmp((*f)->URI, LV2_UI__scaleFactor)) {
       scaleHint = static_cast<const float*>(f[0]->data);
+    } else if (!std::strcmp((*f)->URI,
+                            "http://lv2plug.in/ns/ext/instance-access")) {
+      instance = (*f)->data;
     }
   }
 
@@ -287,6 +292,10 @@ LV2UI_Handle uiInstantiate(const LV2UI_Descriptor*, const char* /*pluginUri*/,
   ui->write = write;
   ui->controller = controller;
   ui->hostResize = hostResize;
+  if (instance) {
+    auto* pub = static_cast<repair::PublicInstance*>(instance);
+    ui->shared.spectralBridge.store(pub->bridge, std::memory_order_relaxed);
+  }
 
   ui->dpy = XOpenDisplay(nullptr);
   if (!ui->dpy) {

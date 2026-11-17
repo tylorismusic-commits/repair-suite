@@ -4,8 +4,10 @@
 
 #include <cassert>
 #include <cmath>
+#include <vector>
 #include <cstdio>
 
+#include "dsp/spectral_capture.hpp"
 #include "presets.hpp"
 #include "ui/panel.hpp"
 
@@ -46,7 +48,7 @@ int main() {
   const double before = shared.get(P_CLIP_UPPER);
   panel.pointerDown(shared, state, 210, 300, false);
   panel.pointerMove(shared, state, 210, 360, false);
-  panel.pointerUp(shared);
+  panel.pointerUp(shared, state);
   assert(shared.get(P_CLIP_UPPER) != before);
 
   // Preset apply changes parameters.
@@ -63,9 +65,9 @@ int main() {
   panel.draw(specCr, shared, state);
   cairo_destroy(specCr);
   cairo_surface_destroy(specSurface);
-  panel.pointerDown(shared, state, 725, 180, false);
+  panel.pointerDown(shared, state, 865, 249, false);
   assert(shared.captureActive.load());
-  panel.pointerDown(shared, state, 725, 180, false);
+  panel.pointerDown(shared, state, 865, 249, false);
   assert(!shared.captureActive.load());
 
   std::printf("panel tests passed\n");

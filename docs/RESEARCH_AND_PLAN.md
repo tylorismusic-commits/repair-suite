@@ -782,13 +782,15 @@ as audition-only in the first alpha.
 
 ### Phase 2 — spectral repair v1 (2–3 weeks)
 
-- Capture buffer and frozen spectrogram.
-- Rectangle/lasso/brush selection, zoom/scroll, rulers.
-- Attenuate, Erase and Interpolate.
-- Timeline anchoring via CLAP transport / LV2 time; audition-only fallback.
-- Edit list, undo/redo, edit state blob, stale-timeline warning.
-- Preview loop and original/processed difference display.
-- Beta with golden-file regression suite.
+- [x] Capture buffer and frozen spectrogram.
+- [x] Rectangle selection, time/frequency axes.
+- [x] Attenuate, Erase, Interpolate and Amplify (basic spectral band edit).
+- [x] Timeline anchoring via CLAP transport / LV2 time; the engine overlays
+  stored replacement PCM.
+- [ ] Lasso/brush selection, zoom/scroll.
+- [ ] Undo/redo and spectral-edit state blob.
+- [ ] Preview loop and original/processed difference display.
+- [ ] Stale-timeline warning.
 
 ### Phase 3 — completeness and release polish
 

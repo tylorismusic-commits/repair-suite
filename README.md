@@ -9,7 +9,9 @@ de-hum, de-noise, de-reverb and selection-based spectral repair, in one fixed
 chain with per-stage bypass. Planned as the restoration counterpart to Comp
 Suite, Vocal Suite and Space Suite.
 
-![Phase 0 panel](docs/panel.png)
+![Repair Suite panel](docs/panel.png)
+
+![Spectral repair page](docs/spectral.png)
 
 ## What works today
 
@@ -29,6 +31,9 @@ Suite, Vocal Suite and Space Suite.
   with the CLAP/LV2 session state.
 - **De-Reverb** — late-tail spectral subtraction with tail length, pre-delay,
   transient protection, tilt and mix, sharing the same STFT pass.
+- **Spectral Repair** — capture a section, freeze, inspect the spectrogram,
+  drag a time-frequency selection, then attenuate, erase, interpolate or
+  amplify it. Edits are anchored to host time and overlaid on playback.
 - Shared real-time STFT: 2048-sample frames, 75% overlap, identity
   reconstruction is unit-tested.
 - Total reported latency is 4221 samples (~87.9 ms at 48 kHz): 1535 for
@@ -40,7 +45,8 @@ Suite, Vocal Suite and Space Suite.
 
 ## Not implemented yet
 
-- The spectral editor and precision hum/sinusoidal re-synthesis.
+- Spectral-edit state persistence, patch/match, and precision hum.
+- LV2 spectral capture depends on the host providing instance-access; CLAP has direct access.
 - The spectral editor (capture/select/interpolate UI) and state serialisation.
 - Preset browser UI (the preset table and LV2 preset export already exist).
 - Loudness/latency status polish.

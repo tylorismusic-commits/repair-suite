@@ -34,6 +34,20 @@ struct PanelState {
   int editCount = 0;
   int editParam = -1;
   std::string editText;
+
+  // Spectral page cache and selection.
+  std::vector<uint32_t> specPixels;
+  int specW = 0;
+  int specH = 0;
+  bool specValid = false;
+  double specStartTime = 0.0;
+  float sampleRate = 48000.0f;
+  bool selecting = false;
+  bool hasSelection = false;
+  double selX0 = 0.0;
+  double selY0 = 0.0;
+  double selX1 = 0.0;
+  double selY1 = 0.0;
   static constexpr int kHistory = 240;
   float inHistory[kHistory] = {};
   int inHistoryHead = 0;
@@ -51,7 +65,7 @@ public:
   // Loads Jost from the given directory, falling back to a system font.
   void loadFont(const std::string& dir);
 
-  void tick(Shared& shared, PanelState& state) const;
+  void tick(Shared& shared, PanelState& state);
   void draw(cairo_t* cr, Shared& shared, const PanelState& state);
 
   bool pointerDown(Shared& shared, PanelState& state, double x, double y,
@@ -60,7 +74,7 @@ public:
   bool keyEvent(Shared& shared, PanelState& state, int key, const char* text);
   bool pointerMove(Shared& shared, PanelState& state, double x, double y,
                    bool fine);
-  void pointerUp(Shared& shared);
+  void pointerUp(Shared& shared, PanelState& state);
   bool wheel(Shared& shared, PanelState& state, double x, double y, double dy);
   bool dragging() const { return dragParam_ >= 0; }
 
@@ -96,6 +110,14 @@ private:
                    bool moduleOn) const;
   void drawTextEntry(cairo_t* cr, const Shared& shared,
                      const PanelState& state) const;
+  void drawSpectralPage(cairo_t* cr, const Shared& shared,
+                        const PanelState& state) const;
+  void loadCapture(Shared& shared, PanelState& state);
+  void buildSpectrogram(PanelState& state);
+  bool applySpectralEdit(Shared& shared, PanelState& state);
+  bool plotHit(double x, double y) const;
+  void selectionTimes(const PanelState& state, double* t0, double* t1,
+                      double* f0, double* f1) const;
   void text(cairo_t* cr, const char* s, double x, double y, double size,
             int align, double r, double g, double b) const;
 
@@ -119,6 +141,13 @@ private:
   double editBoxY_ = 0.0;
   double lastClickTime_ = -1.0e9;
   int lastClickParam_ = -1;
+  std::vector<float> captureL_;
+  std::vector<float> captureR_;
+  double captureStart_ = 0.0;
+  bool captureLoaded_ = false;
+  bool selectionDrag_ = false;
+  double selectionStartX_ = 0.0;
+  double selectionStartY_ = 0.0;
 
   cairo_font_face_t* font_ = nullptr;
   void* ft_ = nullptr;

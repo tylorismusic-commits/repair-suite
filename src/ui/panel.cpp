@@ -4,6 +4,8 @@
 #include "ui/panel.hpp"
 
 #include "presets.hpp"
+#include "dsp/fft.hpp"
+#include "dsp/spectral_bridge.hpp"
 
 #include <cairo-ft.h>
 #include <ft2build.h>
@@ -22,6 +24,10 @@ namespace repair {
 namespace {
 
 constexpr double kPiD = 3.14159265358979323846;
+constexpr double kSpecX = 56.0;
+constexpr double kSpecY = 190.0;
+constexpr double kSpecW = 700.0;
+constexpr double kSpecH = 360.0;
 
 struct Rgb {
   double r, g, b;
@@ -288,13 +294,15 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
       addKnob(P_VERB_MIX, x0 + 2 * step, y2, 56);
       break;
     case 5:  // SPECTRAL
-      addToggle(P_SPEC_ON, 140, 160, 110, 40, "ON");
-      addToggle(P_SPEC_PRESERVE, 270, 160, 180, 40, "PRESERVE FLOOR");
-      addChoice(P_SPEC_OP, 470, 160, 170, 40, "OPERATION");
-      addButton(660, 160, 130, 40, "CAPTURE", 1);
-      addButton(800, 160, 110, 40, "FREEZE", 3);
-      addKnob(P_SPEC_AMOUNT, x0, y1, 56);
-      addKnob(P_SPEC_MIX, x0 + step, y1, 56);
+      addToggle(P_SPEC_ON, 790, 170, 140, 40, "ON");
+      addButton(790, 228, 150, 42, "CAPTURE", 1);
+      addButton(956, 228, 150, 42, "FREEZE", 3);
+      addButton(790, 282, 150, 42, "APPLY", 5);
+      addButton(956, 282, 150, 42, "CLEAR EDITS", 4);
+      addChoice(P_SPEC_OP, 790, 344, 316, 48, "OPERATION");
+      addKnob(P_SPEC_AMOUNT, 858, 500, 48);
+      addKnob(P_SPEC_MIX, 1010, 500, 48);
+      addToggle(P_SPEC_PRESERVE, 790, 600, 200, 40, "PRESERVE FLOOR");
       break;
     default:  // OUT
       addKnob(P_INPUT, x0, y1, 56);
@@ -306,7 +314,7 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
   }
 }
 
-void Panel::tick(Shared& shared, PanelState& state) const {
+void Panel::tick(Shared& shared, PanelState& state) {
   state.inLevelL = shared.inPeakLDb.load(std::memory_order_relaxed);
   state.inLevelR = shared.inPeakRDb.load(std::memory_order_relaxed);
   state.outLevelL = shared.outPeakLDb.load(std::memory_order_relaxed);
@@ -318,10 +326,328 @@ void Panel::tick(Shared& shared, PanelState& state) const {
   state.transportSeconds = shared.transportSeconds.load(std::memory_order_relaxed);
   state.transportValid = shared.transportValid.load(std::memory_order_relaxed);
   state.editCount = shared.editCount.load(std::memory_order_relaxed);
+  state.sampleRate = shared.sampleRate.load(std::memory_order_relaxed);
   state.inHistory[state.inHistoryHead] = state.inLevelL;
   state.inHistoryHead = (state.inHistoryHead + 1) % PanelState::kHistory;
   state.outHistory[state.outHistoryHead] = state.outLevelL;
   state.outHistoryHead = (state.outHistoryHead + 1) % PanelState::kHistory;
+  loadCapture(shared, state);
+}
+
+
+bool Panel::plotHit(double x, double y) const {
+  return x >= kSpecX && x <= kSpecX + kSpecW && y >= kSpecY &&
+         y <= kSpecY + kSpecH;
+}
+
+void Panel::loadCapture(Shared& shared, PanelState& state) {
+  auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
+  if (!bridge || !bridge->frozenReady()) {
+    if (captureLoaded_) {
+      captureLoaded_ = false;
+      state.specValid = false;
+      state.hasSelection = false;
+    }
+    return;
+  }
+  if (captureLoaded_) {
+    return;
+  }
+  if (bridge->copyFrozen(&captureL_, &captureR_, &captureStart_)) {
+    captureLoaded_ = true;
+    state.hasSelection = false;
+    buildSpectrogram(state);
+  }
+}
+
+void Panel::buildSpectrogram(PanelState& state) {
+  constexpr int kCols = 240;
+  constexpr int kRows = 150;
+  constexpr int kN = 1024;
+  state.specW = kCols;
+  state.specH = kRows;
+  state.specPixels.assign(static_cast<size_t>(kCols) * kRows, 0xff0a0e12u);
+  state.specValid = false;
+  state.specStartTime = captureStart_;
+  const int n = static_cast<int>(captureL_.size());
+  if (n < 64) {
+    return;
+  }
+  Fft fft;
+  fft.prepare(kN);
+  std::vector<float> window(kN);
+  for (int i = 0; i < kN; ++i) {
+    window[static_cast<size_t>(i)] =
+        0.5f - 0.5f * std::cos(2.0f * static_cast<float>(kPiD) * i / (kN - 1));
+  }
+  std::vector<float> frame(kN), re(kN), im(kN);
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  for (int col = 0; col < kCols; ++col) {
+    const int center = (n - 1) * col / (kCols - 1);
+    const int start = center - kN / 2;
+    for (int i = 0; i < kN; ++i) {
+      const int at = start + i;
+      float v = 0.0f;
+      if (at >= 0 && at < n) {
+        v = 0.5f * (captureL_[static_cast<size_t>(at)] +
+                    captureR_[static_cast<size_t>(at)]);
+      }
+      frame[static_cast<size_t>(i)] = v * window[static_cast<size_t>(i)];
+    }
+    fft.forward(frame.data(), re.data(), im.data());
+    for (int row = 0; row < kRows; ++row) {
+      const float t = static_cast<float>(row) / (kRows - 1);
+      const float hz = 20000.0f * std::pow(0.001f, t);
+      int bin = static_cast<int>(hz * kN / sr);
+      bin = std::clamp(bin, 1, kN / 2 - 1);
+      const float mag = std::sqrt(re[static_cast<size_t>(bin)] *
+                                      re[static_cast<size_t>(bin)] +
+                                  im[static_cast<size_t>(bin)] *
+                                      im[static_cast<size_t>(bin)]) /
+                        static_cast<float>(kN);
+      float db = 20.0f * std::log10(mag + 1.0e-9f);
+      float e = std::clamp((db + 70.0f) / 60.0f, 0.0f, 1.0f);
+      e = std::pow(e, 1.25f);
+      double r = 0.02;
+      double g = 0.035;
+      double b = 0.055;
+      if (e < 0.5) {
+        const double u = e / 0.5;
+        r += (0.055 - r) * u;
+        g += (0.42 - g) * u;
+        b += (0.46 - b) * u;
+      } else {
+        const double u = (e - 0.5) / 0.5;
+        r = 0.055 + (0.98 - 0.055) * u;
+        g = 0.42 + (0.78 - 0.42) * u;
+        b = 0.46 + (0.30 - 0.46) * u;
+      }
+      const uint32_t rr = static_cast<uint32_t>(std::clamp(r, 0.0, 1.0) * 255.0);
+      const uint32_t gg = static_cast<uint32_t>(std::clamp(g, 0.0, 1.0) * 255.0);
+      const uint32_t bb = static_cast<uint32_t>(std::clamp(b, 0.0, 1.0) * 255.0);
+      state.specPixels[static_cast<size_t>(row * kCols + col)] =
+          0xff000000u | (rr << 16) | (gg << 8) | bb;
+    }
+  }
+  state.specValid = true;
+}
+
+void Panel::selectionTimes(const PanelState& state, double* t0, double* t1,
+                           double* f0, double* f1) const {
+  const double x0 = std::min(state.selX0, state.selX1);
+  const double x1 = std::max(state.selX0, state.selX1);
+  const double y0 = std::min(state.selY0, state.selY1);
+  const double y1 = std::max(state.selY0, state.selY1);
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const double duration = static_cast<double>(captureL_.size()) / sr;
+  *t0 = state.specStartTime + (x0 - kSpecX) / kSpecW * duration;
+  *t1 = state.specStartTime + (x1 - kSpecX) / kSpecW * duration;
+  auto yToHz = [](double y) {
+    const double t = std::clamp((y - kSpecY) / kSpecH, 0.0, 1.0);
+    return 20000.0 * std::pow(0.001, t);
+  };
+  const double fa = yToHz(y0);
+  const double fb = yToHz(y1);
+  *f0 = std::min(fa, fb);
+  *f1 = std::max(fa, fb);
+}
+
+bool Panel::applySpectralEdit(Shared& shared, PanelState& state) {
+  auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
+  if (!bridge || !state.hasSelection || captureL_.empty()) {
+    return false;
+  }
+  double t0 = 0.0;
+  double t1 = 0.0;
+  double f0 = 0.0;
+  double f1 = 0.0;
+  selectionTimes(state, &t0, &t1, &f0, &f1);
+  const float sr = state.sampleRate > 0.0f ? state.sampleRate : 48000.0f;
+  const int n = static_cast<int>(captureL_.size());
+  int i0 = static_cast<int>((t0 - captureStart_) * sr + 0.5);
+  int i1 = static_cast<int>((t1 - captureStart_) * sr + 0.5);
+  i0 = std::clamp(i0, 0, n);
+  i1 = std::clamp(i1, i0, n);
+  const int len = i1 - i0;
+  if (len < 8) {
+    return false;
+  }
+  const int margin = 512;
+  const int workStart = i0 - margin;
+  const int workLen = len + 2 * margin;
+  std::vector<float> workL(static_cast<size_t>(workLen), 0.0f);
+  std::vector<float> workR(static_cast<size_t>(workLen), 0.0f);
+  std::vector<float> accL(static_cast<size_t>(workLen), 0.0f);
+  std::vector<float> accR(static_cast<size_t>(workLen), 0.0f);
+  for (int i = 0; i < workLen; ++i) {
+    const int at = workStart + i;
+    if (at >= 0 && at < n) {
+      workL[static_cast<size_t>(i)] = captureL_[static_cast<size_t>(at)];
+      workR[static_cast<size_t>(i)] = captureR_[static_cast<size_t>(at)];
+    }
+  }
+
+  constexpr int kN = 512;
+  constexpr int kHop = 128;
+  Fft fft;
+  fft.prepare(kN);
+  std::vector<float> window(kN);
+  for (int i = 0; i < kN; ++i) {
+    window[static_cast<size_t>(i)] =
+        0.5f - 0.5f * std::cos(2.0f * static_cast<float>(kPiD) * i / (kN - 1));
+  }
+  std::vector<float> reL(kN), imL(kN), reR(kN), imR(kN);
+  const int op = static_cast<int>(shared.get(P_SPEC_OP) + 0.5);
+  const float amount = shared.get(P_SPEC_AMOUNT);
+  const float mix = static_cast<float>(shared.get(P_SPEC_MIX) * 0.01);
+  int lo = static_cast<int>(f0 * kN / sr);
+  int hi = static_cast<int>(f1 * kN / sr);
+  lo = std::clamp(lo, 1, kN / 2 - 2);
+  hi = std::clamp(hi, lo + 1, kN / 2 - 1);
+
+  for (int start = 0; start + kN <= workLen; start += kHop) {
+    for (int i = 0; i < kN; ++i) {
+      const float w = window[static_cast<size_t>(i)];
+      reL[static_cast<size_t>(i)] =
+          workL[static_cast<size_t>(start + i)] * w;
+      reR[static_cast<size_t>(i)] =
+          workR[static_cast<size_t>(start + i)] * w;
+      imL[static_cast<size_t>(i)] = 0.0f;
+      imR[static_cast<size_t>(i)] = 0.0f;
+    }
+    fft.forward(reL.data(), reL.data(), imL.data());
+    fft.forward(reR.data(), reR.data(), imR.data());
+    for (int k = lo; k <= hi; ++k) {
+      float gain = 1.0f;
+      if (op == 1) {
+        gain = 0.0f;
+      } else if (op == 5) {
+        gain = std::pow(10.0f, std::clamp(amount, 0.0f, 20.0f) / 20.0f);
+      } else if (op == 0 || op == 4) {
+        gain = std::pow(10.0f, -std::clamp(amount, 0.0f, 96.0f) / 20.0f);
+      } else {
+        // Interpolate (also used as the Patch fallback) from the bordering
+        // bins, preserving phase.
+        const int bl = std::max(1, lo - 1);
+        const int bh = std::min(kN / 2 - 1, hi + 1);
+        const float t = static_cast<float>(k - bl) /
+                        static_cast<float>(std::max(1, bh - bl));
+        reL[static_cast<size_t>(k)] =
+            (1.0f - t) * reL[static_cast<size_t>(bl)] +
+            t * reL[static_cast<size_t>(bh)];
+        imL[static_cast<size_t>(k)] =
+            (1.0f - t) * imL[static_cast<size_t>(bl)] +
+            t * imL[static_cast<size_t>(bh)];
+        reR[static_cast<size_t>(k)] =
+            (1.0f - t) * reR[static_cast<size_t>(bl)] +
+            t * reR[static_cast<size_t>(bh)];
+        imR[static_cast<size_t>(k)] =
+            (1.0f - t) * imR[static_cast<size_t>(bl)] +
+            t * imR[static_cast<size_t>(bh)];
+        gain = 1.0f;
+      }
+      const float applied = 1.0f + mix * (gain - 1.0f);
+      reL[static_cast<size_t>(k)] *= applied;
+      imL[static_cast<size_t>(k)] *= applied;
+      reR[static_cast<size_t>(k)] *= applied;
+      imR[static_cast<size_t>(k)] *= applied;
+      const int mirror = kN - k;
+      reL[static_cast<size_t>(mirror)] = reL[static_cast<size_t>(k)];
+      imL[static_cast<size_t>(mirror)] = -imL[static_cast<size_t>(k)];
+      reR[static_cast<size_t>(mirror)] = reR[static_cast<size_t>(k)];
+      imR[static_cast<size_t>(mirror)] = -imR[static_cast<size_t>(k)];
+    }
+    fft.inverse(reL.data(), imL.data());
+    fft.inverse(reR.data(), imR.data());
+    for (int i = 0; i < kN; ++i) {
+      const float w = window[static_cast<size_t>(i)] / 1.5f;
+      accL[static_cast<size_t>(start + i)] += reL[static_cast<size_t>(i)] * w;
+      accR[static_cast<size_t>(start + i)] += reR[static_cast<size_t>(i)] * w;
+    }
+  }
+
+  std::vector<float> outL(static_cast<size_t>(len));
+  std::vector<float> outR(static_cast<size_t>(len));
+  for (int i = 0; i < len; ++i) {
+    const int at = margin + i;
+    outL[static_cast<size_t>(i)] = accL[static_cast<size_t>(at)];
+    outR[static_cast<size_t>(i)] = accR[static_cast<size_t>(at)];
+  }
+  const double startTime = captureStart_ + static_cast<double>(i0) / sr;
+  const double endTime = captureStart_ + static_cast<double>(i1) / sr;
+  return bridge->addEdit(startTime, endTime, outL.data(), outR.data(), len);
+}
+
+void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
+                             const PanelState& state) const {
+  (void)shared;
+  // Title
+  text(cr, "SPECTRAL REPAIR", kSpecX, 172, 18, 0, kText.r, kText.g, kText.b);
+
+  // Plot frame
+  roundRect(cr, kSpecX, kSpecY, kSpecW, kSpecH, 6);
+  setRgb(cr, Rgb{0.02, 0.03, 0.04});
+  cairo_fill(cr);
+  if (state.specValid && state.specW > 0 && state.specH > 0) {
+    cairo_surface_t* image = cairo_image_surface_create_for_data(
+        reinterpret_cast<unsigned char*>(
+            const_cast<uint32_t*>(state.specPixels.data())),
+        CAIRO_FORMAT_ARGB32, state.specW, state.specH, state.specW * 4);
+    cairo_save(cr);
+    cairo_translate(cr, kSpecX, kSpecY);
+    cairo_scale(cr, kSpecW / state.specW, kSpecH / state.specH);
+    cairo_set_source_surface(cr, image, 0, 0);
+    cairo_paint(cr);
+    cairo_restore(cr);
+    cairo_surface_destroy(image);
+  } else {
+    text(cr, "Capture a section, then Freeze",
+         kSpecX + kSpecW * 0.5, kSpecY + kSpecH * 0.5, 15, 1, kDim.r, kDim.g,
+         kDim.b);
+  }
+
+  // Frequency guide lines.
+  cairo_set_line_width(cr, 1.0);
+  for (float hz : {50.0f, 100.0f, 500.0f, 1000.0f, 5000.0f, 10000.0f}) {
+    const double t = std::log(hz / 20000.0) / std::log(0.001);
+    const double y = kSpecY + kSpecH * std::clamp(t, 0.0, 1.0);
+    setRgb(cr, Rgb{0.8, 0.9, 0.9}, 0.10);
+    cairo_move_to(cr, kSpecX, y);
+    cairo_line_to(cr, kSpecX + kSpecW, y);
+    cairo_stroke(cr);
+    char label[16];
+    std::snprintf(label, sizeof(label), "%.0f", hz);
+    text(cr, label, kSpecX - 8, y + 4, 9, 2, kDim.r, kDim.g, kDim.b);
+  }
+
+  // Selection.
+  if (state.selecting || state.hasSelection) {
+    const double x0 = std::min(state.selX0, state.selX1);
+    const double x1 = std::max(state.selX0, state.selX1);
+    const double y0 = std::min(state.selY0, state.selY1);
+    const double y1 = std::max(state.selY0, state.selY1);
+    setRgb(cr, kAccent, 0.18);
+    cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
+    cairo_fill(cr);
+    setRgb(cr, kAccent, 0.9);
+    cairo_set_line_width(cr, 1.4);
+    cairo_rectangle(cr, x0, y0, x1 - x0, y1 - y0);
+    cairo_stroke(cr);
+  }
+
+  // Status line under the plot.
+  char status[160];
+  std::snprintf(status, sizeof(status),
+                "capture %.1f s   ·   edits %d   ·   %.0f Hz – %.0f Hz",
+                captureL_.empty()
+                    ? 0.0
+                    : static_cast<double>(captureL_.size()) /
+                          (state.sampleRate > 0.0f ? state.sampleRate : 48000.0f),
+                state.editCount, 20.0, 20000.0);
+  text(cr, status, kSpecX, kSpecY + kSpecH + 24, 11, 0, kDim.r, kDim.g,
+       kDim.b);
+  text(cr, "drag a box on the spectrogram", kSpecX + kSpecW,
+       kSpecY + kSpecH + 24, 11, 2, kDim.r, kDim.g, kDim.b);
 }
 
 void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
@@ -345,6 +671,9 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
   cairo_stroke(cr);
 
   drawHeader(cr, shared, state);
+  if (state.tab == 5) {
+    drawSpectralPage(cr, shared, state);
+  }
 
   for (const Widget& w : widgets_) {
     drawWidget(cr, w, shared, state);
@@ -618,15 +947,38 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
         if (w.action == 1) {
           const bool armed = shared.captureActive.load(std::memory_order_relaxed);
           shared.captureActive.store(!armed, std::memory_order_relaxed);
+          if (!armed) {
+            captureLoaded_ = false;
+            state.specValid = false;
+            state.hasSelection = false;
+          }
         } else if (w.action == 2) {
           const bool learn =
               shared.noiseLearnActive.load(std::memory_order_relaxed);
           shared.noiseLearnActive.store(!learn, std::memory_order_relaxed);
         } else if (w.action == 3) {
           shared.captureFreeze.store(true, std::memory_order_relaxed);
+        } else if (w.action == 4) {
+          shared.clearEdits.store(true, std::memory_order_relaxed);
+          if (auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed)) {
+            bridge->clearEdits();
+          }
+          state.hasSelection = false;
+        } else if (w.action == 5) {
+          applySpectralEdit(shared, state);
         }
         return true;
     }
+  }
+  if (state.tab == 5 && plotHit(x, y)) {
+    selectionDrag_ = true;
+    selectionStartX_ = x;
+    selectionStartY_ = y;
+    state.selX0 = state.selX1 = x;
+    state.selY0 = state.selY1 = y;
+    state.selecting = true;
+    state.hasSelection = false;
+    return true;
   }
   return false;
 }
@@ -650,7 +1002,12 @@ bool Panel::keyEvent(Shared& shared, PanelState& state, int key,
 
 bool Panel::pointerMove(Shared& shared, PanelState& state, double x, double y,
                         bool fine) {
-  (void)state;
+  if (selectionDrag_) {
+    state.selX1 = std::clamp(x, kSpecX, kSpecX + kSpecW);
+    state.selY1 = std::clamp(y, kSpecY, kSpecY + kSpecH);
+    state.selecting = true;
+    return true;
+  }
   (void)x;
   if (dragParam_ < 0) {
     return false;
@@ -667,9 +1024,15 @@ bool Panel::pointerMove(Shared& shared, PanelState& state, double x, double y,
   return true;
 }
 
-void Panel::pointerUp(Shared& shared) {
+void Panel::pointerUp(Shared& shared, PanelState& state) {
   (void)shared;
   dragParam_ = -1;
+  if (selectionDrag_) {
+    selectionDrag_ = false;
+    state.selecting = false;
+    state.hasSelection = std::fabs(state.selX1 - state.selX0) > 4.0 &&
+                         std::fabs(state.selY1 - state.selY0) > 4.0;
+  }
 }
 
 bool Panel::wheel(Shared& shared, PanelState& state, double x, double y,

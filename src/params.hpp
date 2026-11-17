@@ -15,6 +15,8 @@
 
 namespace repair {
 
+class SpectralBridge;
+
 // Parameter ids are the CLAP parameter ids and the index into Shared::values.
 // They are also the ordering of the LV2 control ports (port = 4 + id), so this
 // enum must only ever be appended to.
@@ -275,6 +277,8 @@ public:
     profileBins.store(0);
     profileValid.store(false);
     profilePending.store(false);
+    spectralBridge.store(nullptr, std::memory_order_relaxed);
+    sampleRate.store(48000.0f, std::memory_order_relaxed);
     for (int i = 0; i < kProfileBins; ++i) {
       noiseProfile[i].store(0.0f);
     }
@@ -380,6 +384,8 @@ public:
   std::atomic<int> profileBins;
   std::atomic<bool> profileValid;
   std::atomic<bool> profilePending;
+  std::atomic<SpectralBridge*> spectralBridge;
+  std::atomic<float> sampleRate;
   std::atomic<float> bpm;      // reserved for later tempo-synced capture
   std::atomic<bool> hostTempo;
 

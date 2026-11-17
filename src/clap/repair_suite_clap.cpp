@@ -300,7 +300,7 @@ private:
         break;
       }
       case ButtonRelease:
-        panel_.pointerUp(shared_);
+        panel_.pointerUp(shared_, state_);
         break;
       case KeyPress: {
         char buf[8] = {};
@@ -777,8 +777,10 @@ void pluginDestroy(const clap_plugin_t* p) {
 bool pluginActivate(const clap_plugin_t* p, double sampleRate, uint32_t,
                     uint32_t) {
   Plugin* s = self(p);
-  s->sampleRate = sampleRate;
-  s->engine.prepare(static_cast<float>(sampleRate));
+  s->sampleRate = sampleRate > 0.0 ? sampleRate : 48000.0;
+  s->shared.sampleRate.store(static_cast<float>(s->sampleRate),
+                             std::memory_order_relaxed);
+  s->engine.prepare(static_cast<float>(s->sampleRate));
   s->active.store(true, std::memory_order_relaxed);
   // REAPER only picks up a new latency when the plugin calls changed(), so do
   // that here (being-activated is the one legal moment) - but only when the
@@ -921,6 +923,8 @@ void pluginOnMainThread(const clap_plugin_t*) {}
 Plugin* createPlugin(const clap_host_t* host) {
   Plugin* s = new Plugin();
   s->host = host;
+  s->shared.spectralBridge.store(&s->engine.capture(),
+                                 std::memory_order_relaxed);
   s->plugin.desc = &kDescriptor;
   s->plugin.plugin_data = s;
   s->plugin.init = pluginInit;

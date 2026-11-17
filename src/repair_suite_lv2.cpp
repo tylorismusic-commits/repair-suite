@@ -18,6 +18,7 @@
 
 #include "dsp/engine.hpp"
 #include "dsp/inline_display.hpp"
+#include "dsp/repair_instance.hpp"
 #include "params.hpp"
 
 namespace {
@@ -53,6 +54,7 @@ enum Port : uint32_t {
 };
 
 struct Plugin {
+  repair::PublicInstance pub;
   float sampleRate = 48000.0f;
   float lastPort[repair::P_COUNT] = {};
   bool portsSeen = false;
@@ -106,6 +108,8 @@ LV2_Handle instantiate(const LV2_Descriptor*, double rate, const char*,
   auto* p = new Plugin();
   p->sampleRate = static_cast<float>(rate);
   p->engine.prepare(p->sampleRate);
+  p->pub.bridge = &p->engine.capture();
+  p->shared.sampleRate.store(p->sampleRate, std::memory_order_relaxed);
   p->engine.setControls(repair::controlsFrom(p->shared));
   p->shared.captureFreeze.store(false, std::memory_order_relaxed);
   p->shared.clearCapture.store(false, std::memory_order_relaxed);

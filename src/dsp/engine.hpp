@@ -55,7 +55,7 @@ public:
     dereverb_.setControls(c);
     capture_.setArmed(c.captureArm);
     if (c.captureFreeze) {
-      capture_.freeze();
+      capture_.requestFreeze();
     }
     if (c.clearCapture) {
       capture_.reset();
