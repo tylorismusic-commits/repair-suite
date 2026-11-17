@@ -1,0 +1,753 @@
+@prefix lv2:  <http://lv2plug.in/ns/lv2core#> .
+@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix units: <http://lv2plug.in/ns/extensions/units#> .
+@prefix doap: <http://usefulinc.com/ns/doap#> .
+@prefix foaf: <http://xmlns.com/foaf/0.1/> .
+@prefix ui:   <http://lv2plug.in/ns/extensions/ui#> .
+@prefix pset: <http://lv2plug.in/ns/ext/presets#> .
+@prefix atom: <http://lv2plug.in/ns/ext/atom#> .
+@prefix time: <http://lv2plug.in/ns/ext/time#> .
+@prefix pg:   <http://lv2plug.in/ns/ext/port-groups#> .
+@prefix idpy: <http://harrisonconsoles.com/lv2/inlinedisplay#> .
+
+idpy:interface a lv2:ExtensionData .
+idpy:queue_draw a lv2:Feature .
+
+# ---- plugin ----
+@prefix repair: <https://github.com/tylorismusic-commits/repair-suite> .
+
+<https://github.com/tylorismusic-commits/repair-suite> a lv2:Plugin, doap:Project ;
+  doap:name "Repair Suite" ;
+  doap:license <https://spdx.org/licenses/GPL-3.0-or-later.html> ;
+  doap:maintainer [ foaf:name "tylorismusic" ] ;
+  lv2:optionalFeature lv2:hardRTCapable , idpy:queue_draw ;
+  lv2:extensionData idpy:interface ;
+  lv2:port
+    <#audio_in_l> , <#audio_in_r> , <#audio_out_l> , <#audio_out_r> ,
+    <#power> ,
+    <#input> ,
+    <#output> ,
+    <#delta> ,
+    <#dc_on> ,
+    <#dc_freq> ,
+    <#clip_on> ,
+    <#clip_mode> ,
+    <#clip_auto> ,
+    <#clip_upper> ,
+    <#clip_lower> ,
+    <#clip_iter> ,
+    <#clip_headroom> ,
+    <#clip_mix> ,
+    <#click_on> ,
+    <#click_mode> ,
+    <#click_sens> ,
+    <#click_width> ,
+    <#click_link> ,
+    <#click_mix> ,
+    <#hum_on> ,
+    <#hum_auto> ,
+    <#hum_freq> ,
+    <#hum_harmonics> ,
+    <#hum_odd> ,
+    <#hum_depth> ,
+    <#hum_precision> ,
+    <#hum_mix> ,
+    <#noise_on> ,
+    <#noise_adaptive> ,
+    <#noise_reduction> ,
+    <#noise_tonal> ,
+    <#noise_smooth> ,
+    <#noise_transient> ,
+    <#noise_frame> ,
+    <#noise_mix> ,
+    <#verb_on> ,
+    <#verb_amount> ,
+    <#verb_tail> ,
+    <#verb_predelay> ,
+    <#verb_transient> ,
+    <#verb_tilt> ,
+    <#verb_mix> ,
+    <#spec_on> ,
+    <#spec_op> ,
+    <#spec_amount> ,
+    <#spec_preserve> ,
+    <#spec_mix> ;
+  lv2:port
+    <#learn_input> , <#learn_sib> , <#compare> ,
+    <#comp_gr> , <#sib_gr> , <#harsh_gr> , <#lim_gr> ,
+    <#in_l> , <#in_r> , <#out_l> , <#out_r> ,
+    <#input_learn_peak> , <#sib_learn_hz> , <#sib_learn_valid> ,
+    <#host_bpm> , <#host_tempo> , <#latency> , <#time> ;
+  ui:ui <#ui> .
+
+<#ui> a ui:X11UI ;
+  ui:binary <repair_suite_ui.so> ;
+  lv2:optionalFeature ui:resize ;
+  lv2:requiredFeature ui:idleInterface ;
+  lv2:extensionData ui:idleInterface .
+
+<#audio_in_l> a lv2:AudioPort, lv2:InputPort ;
+  lv2:index 0 ; lv2:symbol "audio_in_l" ; lv2:name "Audio In L" .
+
+<#audio_in_r> a lv2:AudioPort, lv2:InputPort ;
+  lv2:index 1 ; lv2:symbol "audio_in_r" ; lv2:name "Audio In R" .
+
+<#audio_out_l> a lv2:AudioPort, lv2:OutputPort ;
+  lv2:index 2 ; lv2:symbol "audio_out_l" ; lv2:name "Audio Out L" .
+
+<#audio_out_r> a lv2:AudioPort, lv2:OutputPort ;
+  lv2:index 3 ; lv2:symbol "audio_out_r" ; lv2:name "Audio Out R" .
+
+<#power> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 4 ;
+  lv2:symbol "power" ;
+  lv2:name "Power" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#input> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 5 ;
+  lv2:symbol "input" ;
+  lv2:name "Input" ;
+  lv2:default 0 ;
+  lv2:minimum -18 ;
+  lv2:maximum 18 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended -6 to 6" .
+
+<#output> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 6 ;
+  lv2:symbol "output" ;
+  lv2:name "Output" ;
+  lv2:default 0 ;
+  lv2:minimum -18 ;
+  lv2:maximum 18 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended -6 to 6" .
+
+<#delta> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 7 ;
+  lv2:symbol "delta" ;
+  lv2:name "Delta" ;
+  lv2:default 0 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#dc_on> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 8 ;
+  lv2:symbol "dc_on" ;
+  lv2:name "DC Filter" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#dc_freq> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 9 ;
+  lv2:symbol "dc_freq" ;
+  lv2:name "Rumble" ;
+  lv2:default 20 ;
+  lv2:minimum 5 ;
+  lv2:maximum 60 ;
+  units:unit units:hz ;
+  rdfs:comment "Recommended 10 to 30" .
+
+<#clip_on> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 10 ;
+  lv2:symbol "clip_on" ;
+  lv2:name "De-Clip On" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#clip_mode> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 11 ;
+  lv2:symbol "clip_mode" ;
+  lv2:name "Mode" ;
+  lv2:default 0 ;
+  lv2:minimum 0 ;
+  lv2:maximum 2 ;
+  lv2:portProperty lv2:integer ;
+  lv2:scalePoint [ rdfs:label "High" ; rdf:value 0 ] ;
+  lv2:scalePoint [ rdfs:label "Balanced" ; rdf:value 1 ] ;
+  lv2:scalePoint [ rdfs:label "Fast" ; rdf:value 2 ] ;
+  rdfs:comment "Recommended 0 to 2" .
+
+<#clip_auto> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 12 ;
+  lv2:symbol "clip_auto" ;
+  lv2:name "Auto Threshold" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#clip_upper> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 13 ;
+  lv2:symbol "clip_upper" ;
+  lv2:name "Upper" ;
+  lv2:default 0 ;
+  lv2:minimum -24 ;
+  lv2:maximum 0 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended -6 to 0" .
+
+<#clip_lower> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 14 ;
+  lv2:symbol "clip_lower" ;
+  lv2:name "Lower" ;
+  lv2:default 0 ;
+  lv2:minimum -24 ;
+  lv2:maximum 0 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended -6 to 0" .
+
+<#clip_iter> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 15 ;
+  lv2:symbol "clip_iter" ;
+  lv2:name "Iterations" ;
+  lv2:default 12 ;
+  lv2:minimum 4 ;
+  lv2:maximum 30 ;
+  lv2:portProperty lv2:integer ;
+  rdfs:comment "Recommended 8 to 16" .
+
+<#clip_headroom> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 16 ;
+  lv2:symbol "clip_headroom" ;
+  lv2:name "Headroom" ;
+  lv2:default 0 ;
+  lv2:minimum 0 ;
+  lv2:maximum 12 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended 0 to 6" .
+
+<#clip_mix> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 17 ;
+  lv2:symbol "clip_mix" ;
+  lv2:name "Mix" ;
+  lv2:default 100 ;
+  lv2:minimum 0 ;
+  lv2:maximum 100 ;
+  units:unit units:pc ;
+  rdfs:comment "Recommended 80 to 100" .
+
+<#click_on> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 18 ;
+  lv2:symbol "click_on" ;
+  lv2:name "De-Click On" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#click_mode> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 19 ;
+  lv2:symbol "click_mode" ;
+  lv2:name "Mode" ;
+  lv2:default 0 ;
+  lv2:minimum 0 ;
+  lv2:maximum 3 ;
+  lv2:portProperty lv2:integer ;
+  lv2:scalePoint [ rdfs:label "Click" ; rdf:value 0 ] ;
+  lv2:scalePoint [ rdfs:label "Crackle" ; rdf:value 1 ] ;
+  lv2:scalePoint [ rdfs:label "Thump" ; rdf:value 2 ] ;
+  lv2:scalePoint [ rdfs:label "Dropout" ; rdf:value 3 ] ;
+  rdfs:comment "Recommended 0 to 3" .
+
+<#click_sens> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 20 ;
+  lv2:symbol "click_sens" ;
+  lv2:name "Sensitivity" ;
+  lv2:default 5 ;
+  lv2:minimum 0 ;
+  lv2:maximum 10 ;
+  rdfs:comment "Recommended 3 to 7" .
+
+<#click_width> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 21 ;
+  lv2:symbol "click_width" ;
+  lv2:name "Max Width" ;
+  lv2:default 5 ;
+  lv2:minimum 0.1 ;
+  lv2:maximum 20 ;
+  units:unit units:ms ;
+  rdfs:comment "Recommended 1 to 10" .
+
+<#click_link> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 22 ;
+  lv2:symbol "click_link" ;
+  lv2:name "Stereo Link" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#click_mix> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 23 ;
+  lv2:symbol "click_mix" ;
+  lv2:name "Mix" ;
+  lv2:default 100 ;
+  lv2:minimum 0 ;
+  lv2:maximum 100 ;
+  units:unit units:pc ;
+  rdfs:comment "Recommended 80 to 100" .
+
+<#hum_on> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 24 ;
+  lv2:symbol "hum_on" ;
+  lv2:name "De-Hum On" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#hum_auto> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 25 ;
+  lv2:symbol "hum_auto" ;
+  lv2:name "Auto Tune" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#hum_freq> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 26 ;
+  lv2:symbol "hum_freq" ;
+  lv2:name "Frequency" ;
+  lv2:default 50 ;
+  lv2:minimum 40 ;
+  lv2:maximum 70 ;
+  units:unit units:hz ;
+  rdfs:comment "Recommended 49 to 61" .
+
+<#hum_harmonics> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 27 ;
+  lv2:symbol "hum_harmonics" ;
+  lv2:name "Harmonics" ;
+  lv2:default 12 ;
+  lv2:minimum 1 ;
+  lv2:maximum 96 ;
+  lv2:portProperty lv2:integer ;
+  rdfs:comment "Recommended 4 to 24" .
+
+<#hum_odd> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 28 ;
+  lv2:symbol "hum_odd" ;
+  lv2:name "Odd Only" ;
+  lv2:default 0 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#hum_depth> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 29 ;
+  lv2:symbol "hum_depth" ;
+  lv2:name "Depth" ;
+  lv2:default 30 ;
+  lv2:minimum 0 ;
+  lv2:maximum 60 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended 12 to 48" .
+
+<#hum_precision> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 30 ;
+  lv2:symbol "hum_precision" ;
+  lv2:name "Precision" ;
+  lv2:default 0 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#hum_mix> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 31 ;
+  lv2:symbol "hum_mix" ;
+  lv2:name "Mix" ;
+  lv2:default 100 ;
+  lv2:minimum 0 ;
+  lv2:maximum 100 ;
+  units:unit units:pc ;
+  rdfs:comment "Recommended 80 to 100" .
+
+<#noise_on> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 32 ;
+  lv2:symbol "noise_on" ;
+  lv2:name "De-Noise On" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#noise_adaptive> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 33 ;
+  lv2:symbol "noise_adaptive" ;
+  lv2:name "Adaptive" ;
+  lv2:default 0 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#noise_reduction> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 34 ;
+  lv2:symbol "noise_reduction" ;
+  lv2:name "Reduction" ;
+  lv2:default 12 ;
+  lv2:minimum 0 ;
+  lv2:maximum 40 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended 6 to 24" .
+
+<#noise_tonal> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 35 ;
+  lv2:symbol "noise_tonal" ;
+  lv2:name "Tonal" ;
+  lv2:default 12 ;
+  lv2:minimum 0 ;
+  lv2:maximum 40 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended 6 to 24" .
+
+<#noise_smooth> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 36 ;
+  lv2:symbol "noise_smooth" ;
+  lv2:name "Smoothing" ;
+  lv2:default 5 ;
+  lv2:minimum 0 ;
+  lv2:maximum 10 ;
+  rdfs:comment "Recommended 3 to 7" .
+
+<#noise_transient> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 37 ;
+  lv2:symbol "noise_transient" ;
+  lv2:name "Transient" ;
+  lv2:default 5 ;
+  lv2:minimum 0 ;
+  lv2:maximum 10 ;
+  rdfs:comment "Recommended 3 to 8" .
+
+<#noise_frame> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 38 ;
+  lv2:symbol "noise_frame" ;
+  lv2:name "Frame" ;
+  lv2:default 2 ;
+  lv2:minimum 0 ;
+  lv2:maximum 3 ;
+  lv2:portProperty lv2:integer ;
+  lv2:scalePoint [ rdfs:label "512" ; rdf:value 0 ] ;
+  lv2:scalePoint [ rdfs:label "1024" ; rdf:value 1 ] ;
+  lv2:scalePoint [ rdfs:label "2048" ; rdf:value 2 ] ;
+  lv2:scalePoint [ rdfs:label "4096" ; rdf:value 3 ] ;
+  rdfs:comment "Recommended 1 to 2" .
+
+<#noise_mix> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 39 ;
+  lv2:symbol "noise_mix" ;
+  lv2:name "Mix" ;
+  lv2:default 100 ;
+  lv2:minimum 0 ;
+  lv2:maximum 100 ;
+  units:unit units:pc ;
+  rdfs:comment "Recommended 80 to 100" .
+
+<#verb_on> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 40 ;
+  lv2:symbol "verb_on" ;
+  lv2:name "De-Reverb On" ;
+  lv2:default 0 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#verb_amount> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 41 ;
+  lv2:symbol "verb_amount" ;
+  lv2:name "Amount" ;
+  lv2:default 6 ;
+  lv2:minimum 0 ;
+  lv2:maximum 20 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended 2 to 10" .
+
+<#verb_tail> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 42 ;
+  lv2:symbol "verb_tail" ;
+  lv2:name "Tail" ;
+  lv2:default 0.8 ;
+  lv2:minimum 0.2 ;
+  lv2:maximum 3 ;
+  units:unit units:s ;
+  rdfs:comment "Recommended 0.4 to 1.4" .
+
+<#verb_predelay> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 43 ;
+  lv2:symbol "verb_predelay" ;
+  lv2:name "Pre-delay" ;
+  lv2:default 30 ;
+  lv2:minimum 0 ;
+  lv2:maximum 100 ;
+  units:unit units:ms ;
+  rdfs:comment "Recommended 15 to 50" .
+
+<#verb_transient> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 44 ;
+  lv2:symbol "verb_transient" ;
+  lv2:name "Transient" ;
+  lv2:default 6 ;
+  lv2:minimum 0 ;
+  lv2:maximum 10 ;
+  rdfs:comment "Recommended 4 to 8" .
+
+<#verb_tilt> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 45 ;
+  lv2:symbol "verb_tilt" ;
+  lv2:name "Tilt" ;
+  lv2:default 0 ;
+  lv2:minimum -6 ;
+  lv2:maximum 6 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended -3 to 3" .
+
+<#verb_mix> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 46 ;
+  lv2:symbol "verb_mix" ;
+  lv2:name "Mix" ;
+  lv2:default 100 ;
+  lv2:minimum 0 ;
+  lv2:maximum 100 ;
+  units:unit units:pc ;
+  rdfs:comment "Recommended 50 to 100" .
+
+<#spec_on> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 47 ;
+  lv2:symbol "spec_on" ;
+  lv2:name "Spectral On" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#spec_op> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 48 ;
+  lv2:symbol "spec_op" ;
+  lv2:name "Operation" ;
+  lv2:default 2 ;
+  lv2:minimum 0 ;
+  lv2:maximum 5 ;
+  lv2:portProperty lv2:integer ;
+  lv2:scalePoint [ rdfs:label "Attenuate" ; rdf:value 0 ] ;
+  lv2:scalePoint [ rdfs:label "Erase" ; rdf:value 1 ] ;
+  lv2:scalePoint [ rdfs:label "Interpolate" ; rdf:value 2 ] ;
+  lv2:scalePoint [ rdfs:label "Patch" ; rdf:value 3 ] ;
+  lv2:scalePoint [ rdfs:label "Repair" ; rdf:value 4 ] ;
+  lv2:scalePoint [ rdfs:label "Amplify" ; rdf:value 5 ] ;
+  rdfs:comment "Recommended 0 to 5" .
+
+<#spec_amount> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 49 ;
+  lv2:symbol "spec_amount" ;
+  lv2:name "Amount" ;
+  lv2:default 24 ;
+  lv2:minimum 0 ;
+  lv2:maximum 96 ;
+  units:unit units:db ;
+  rdfs:comment "Recommended 6 to 48" .
+
+<#spec_preserve> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 50 ;
+  lv2:symbol "spec_preserve" ;
+  lv2:name "Preserve Floor" ;
+  lv2:default 1 ;
+  lv2:minimum 0 ;
+  lv2:maximum 1 ;
+  lv2:portProperty lv2:integer ;
+  lv2:portProperty lv2:toggled ;
+  rdfs:comment "Recommended 0 to 1" .
+
+<#spec_mix> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 51 ;
+  lv2:symbol "spec_mix" ;
+  lv2:name "Mix" ;
+  lv2:default 100 ;
+  lv2:minimum 0 ;
+  lv2:maximum 100 ;
+  units:unit units:pc ;
+  rdfs:comment "Recommended 80 to 100" .
+
+<#learn_input> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 52 ; lv2:symbol "learn_input" ; lv2:name "Learn Input" ;
+  lv2:default 0 ; lv2:minimum 0 ; lv2:maximum 1 ;
+  lv2:portProperty lv2:toggled .
+
+<#learn_sib> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 53 ; lv2:symbol "learn_sib" ; lv2:name "Learn Sibilance" ;
+  lv2:default 0 ; lv2:minimum 0 ; lv2:maximum 1 ;
+  lv2:portProperty lv2:toggled .
+
+<#compare> a lv2:InputPort, lv2:ControlPort ;
+  lv2:index 54 ; lv2:symbol "compare" ; lv2:name "Compare Dry" ;
+  lv2:default 0 ; lv2:minimum 0 ; lv2:maximum 1 ;
+  lv2:portProperty lv2:toggled .
+
+<#comp_gr> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 55 ;
+  lv2:symbol "comp_gr" ;
+  lv2:name "comp_gr" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#sib_gr> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 56 ;
+  lv2:symbol "sib_gr" ;
+  lv2:name "sib_gr" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#harsh_gr> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 57 ;
+  lv2:symbol "harsh_gr" ;
+  lv2:name "harsh_gr" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#lim_gr> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 58 ;
+  lv2:symbol "lim_gr" ;
+  lv2:name "lim_gr" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#out_l> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 59 ;
+  lv2:symbol "out_l" ;
+  lv2:name "out_l" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#out_r> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 60 ;
+  lv2:symbol "out_r" ;
+  lv2:name "out_r" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#in_l> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 61 ;
+  lv2:symbol "in_l" ;
+  lv2:name "in_l" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#in_r> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 62 ;
+  lv2:symbol "in_r" ;
+  lv2:name "in_r" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#input_learn_peak> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 63 ;
+  lv2:symbol "input_learn_peak" ;
+  lv2:name "input_learn_peak" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#sib_learn_hz> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 64 ;
+  lv2:symbol "sib_learn_hz" ;
+  lv2:name "sib_learn_hz" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#sib_learn_valid> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 65 ;
+  lv2:symbol "sib_learn_valid" ;
+  lv2:name "sib_learn_valid" ;
+  lv2:minimum -120 ;
+  lv2:maximum 12 ;
+  lv2:default -120 ;
+  units:unit units:db .
+
+<#host_bpm> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 66 ;
+  lv2:symbol "host_bpm" ;
+  lv2:name "Host BPM" ;
+  lv2:minimum 20 ; lv2:maximum 400 ; lv2:default 120 ;
+  units:unit units:bpm .
+
+<#host_tempo> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 67 ;
+  lv2:symbol "host_tempo" ;
+  lv2:name "Host Tempo Active" ;
+  lv2:minimum 0 ; lv2:maximum 1 ; lv2:default 0 ;
+  lv2:portProperty lv2:toggled .
+
+<#latency> a lv2:OutputPort, lv2:ControlPort ;
+  lv2:index 68 ;
+  lv2:symbol "latency" ;
+  lv2:name "Latency" ;
+  lv2:designation lv2:latency ;
+  lv2:minimum 0 ;
+  lv2:maximum 0 ;
+  lv2:default 0 .
+
+<#time> a lv2:InputPort, atom:Sequence ;
+  lv2:index 69 ;
+  lv2:symbol "time" ;
+  lv2:name "Time" ;
+  lv2:designation time:position ;
+  atom:supports time:Position .
