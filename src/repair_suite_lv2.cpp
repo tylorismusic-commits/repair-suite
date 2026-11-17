@@ -290,6 +290,7 @@ void run(LV2_Handle handle, uint32_t frames) {
   p->engine.process(p->audioOutL, p->audioOutR, static_cast<int>(frames),
                     p->meters, p->transportSeconds, p->transportValid);
   if (p->engine.takeProfileReady()) {
+    p->shared.noiseLearnActive.store(false, std::memory_order_relaxed);
     float profile[repair::kProfileBins] = {};
     const int bins = p->engine.copyNoiseProfile(profile, repair::kProfileBins);
     if (bins > 0) {

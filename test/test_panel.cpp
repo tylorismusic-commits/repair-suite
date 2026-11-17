@@ -178,6 +178,11 @@ int main() {
     spectralPanel.pointerDown(spectralShared, spectralState, 865, 303, false);
     spectralPanel.pointerUp(spectralShared, spectralState);
     assert(capture.editCount() > beforeZoomEdit);
+    const int beforePatch = capture.editCount();
+    spectralShared.set(P_SPEC_OP, 3.0);  // Patch
+    spectralPanel.pointerDown(spectralShared, spectralState, 865, 303, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(capture.editCount() > beforePatch);
     cairo_destroy(sctx);
     cairo_surface_destroy(ss);
   }

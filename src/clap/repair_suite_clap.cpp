@@ -943,6 +943,7 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   s->engine.process(left, right, static_cast<int>(frames), s->meters, hostTime,
                     hostTimeValid);
   if (s->engine.takeProfileReady()) {
+    s->shared.noiseLearnActive.store(false, std::memory_order_relaxed);
     float profile[repair::kProfileBins] = {};
     const int bins = s->engine.copyNoiseProfile(profile, repair::kProfileBins);
     if (bins > 0) {
