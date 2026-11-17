@@ -33,6 +33,7 @@ public:
     resR_.assign(kWindow, 0.0f);
     absRes_.assign(kWindow, 0.0f);
     sorted_.assign(kWindow, 0.0f);
+    lpBuf_.assign(kWindow, 0.0f);
     maskL_.assign(kWindow, 0);
     maskR_.assign(kWindow, 0);
     maskC_.assign(kWindow, 0);
@@ -137,8 +138,8 @@ private:
     if (controls_.clickOn && controls_.power) {
       runsL_.clear();
       runsR_.clear();
-      detect(origL_, resL_, maskL_, runsL_);
-      detect(origR_, resR_, maskR_, runsR_);
+      detect(origL_, resL_, maskL_, runsL_, 0);
+      detect(origR_, resR_, maskR_, runsR_, 1);
 
       if (controls_.clickLink) {
         std::fill(maskC_.begin(), maskC_.end(), 0);
@@ -179,22 +180,32 @@ private:
   }
 
   void detect(const std::vector<float>& x, std::vector<float>& residual,
-              std::vector<uint8_t>& mask, std::vector<Run>& runs) noexcept {
+              std::vector<uint8_t>& mask, std::vector<Run>& runs,
+              int channel) noexcept {
+    if (controls_.clickMode == 3) {
+      detectDropouts(x, mask, runs);
+      return;
+    }
+    if (controls_.clickMode == 2) {
+      detectThumps(x, mask, runs, channel);
+      return;
+    }
+    const std::vector<float>& sig = x;
     // Median of five samples, with edge clamping.
     for (int i = 0; i < kWindow; ++i) {
       float v[5];
       for (int k = -2; k <= 2; ++k) {
         const int at = std::clamp(i + k, 0, kWindow - 1);
-        v[k + 2] = x[static_cast<size_t>(at)];
+        v[k + 2] = sig[static_cast<size_t>(at)];
       }
       std::sort(v, v + 5);
       residual[static_cast<size_t>(i)] =
-          x[static_cast<size_t>(i)] - v[2];
+          sig[static_cast<size_t>(i)] - v[2];
     }
     double sumSq = 0.0;
     for (int i = 0; i < kWindow; ++i) {
-      sumSq += static_cast<double>(x[static_cast<size_t>(i)]) *
-               x[static_cast<size_t>(i)];
+      sumSq += static_cast<double>(sig[static_cast<size_t>(i)]) *
+               sig[static_cast<size_t>(i)];
       absRes_[static_cast<size_t>(i)] =
           std::fabs(residual[static_cast<size_t>(i)]);
     }
@@ -226,6 +237,77 @@ private:
         runs.push_back(r);
       }
       i = end + 1;
+    }
+  }
+
+  void detectThumps(const std::vector<float>& x, std::vector<uint8_t>& mask,
+                    std::vector<Run>& runs, int channel) noexcept {
+    const float lpA = std::exp(-2.0f * 3.14159265358979323846f * 150.0f / sr_);
+    const float envA = std::exp(-2.0f * 3.14159265358979323846f * 12.0f / sr_);
+    float lpState = lowpassState_[static_cast<size_t>(channel)];
+    float env = thumpEnv_[static_cast<size_t>(channel)];
+    const float sens = std::clamp(controls_.clickSensitivity, 0.0f, 10.0f);
+    const float threshold = 0.015f + 0.012f * (10.0f - sens);
+    int i = 0;
+    while (i < kWindow) {
+      lpState = lpA * lpState + (1.0f - lpA) * x[static_cast<size_t>(i)];
+      env = envA * env + (1.0f - envA) * std::fabs(lpState);
+      lpBuf_[static_cast<size_t>(i)] = std::fabs(lpState) - env;
+      ++i;
+    }
+    lowpassState_[static_cast<size_t>(channel)] = lpState;
+    thumpEnv_[static_cast<size_t>(channel)] = env;
+    i = 2;
+    while (i < kWindow - 2) {
+      if (lpBuf_[static_cast<size_t>(i)] <= threshold) {
+        ++i;
+        continue;
+      }
+      const int start = i;
+      while (i < kWindow &&
+             lpBuf_[static_cast<size_t>(i)] > threshold * 0.4f) {
+        ++i;
+      }
+      const int end = i - 1;
+      if (end > start && end - start + 1 <= maxWidth_) {
+        for (int j = start; j <= end; ++j) {
+          mask[static_cast<size_t>(j)] = 1;
+        }
+        Run r;
+        r.a = start;
+        r.b = end;
+        runs.push_back(r);
+      }
+    }
+  }
+
+  void detectDropouts(const std::vector<float>& x,
+                      std::vector<uint8_t>& mask,
+                      std::vector<Run>& runs) noexcept {
+    const float zero = 1.0e-4f;
+    const int limit = std::min(maxWidth_, 4096);
+    int i = 1;
+    while (i < kWindow - 1) {
+      if (std::fabs(x[static_cast<size_t>(i)]) > zero) {
+        ++i;
+        continue;
+      }
+      const int start = i;
+      while (i < kWindow && std::fabs(x[static_cast<size_t>(i)]) <= zero) {
+        ++i;
+      }
+      const int end = i - 1;
+      if (end > start && end - start + 1 <= limit &&
+          std::fabs(x[static_cast<size_t>(start - 1)]) > 0.01f &&
+          std::fabs(x[static_cast<size_t>(end + 1)]) > 0.01f) {
+        for (int j = start; j <= end; ++j) {
+          mask[static_cast<size_t>(j)] = 1;
+        }
+        Run r;
+        r.a = start;
+        r.b = end;
+        runs.push_back(r);
+      }
     }
   }
 
@@ -276,8 +358,12 @@ private:
       const float h10 = t3 - 2.0f * t2 + t;
       const float h01 = -2.0f * t3 + 3.0f * t2;
       const float h11 = t3 - t2;
-      dst[static_cast<size_t>(j)] =
-          h00 * y0 + h10 * h * m0 + h01 * y1 + h11 * h * m1;
+      if (controls_.clickMode == 2) {
+        dst[static_cast<size_t>(j)] = y0 + (y1 - y0) * t;
+      } else {
+        dst[static_cast<size_t>(j)] =
+            h00 * y0 + h10 * h * m0 + h01 * y1 + h11 * h * m1;
+      }
     }
   }
 
@@ -287,8 +373,10 @@ private:
   int maxWidth_ = 64;
   int clicks_ = 0;
   int totalClicks_ = 0;
+  float lowpassState_[2] = {0.0f, 0.0f};
+  float thumpEnv_[2] = {0.0f, 0.0f};
   std::vector<float> origL_, origR_, workL_, workR_;
-  std::vector<float> resL_, resR_, absRes_, sorted_;
+  std::vector<float> resL_, resR_, absRes_, sorted_, lpBuf_;
   std::vector<uint8_t> maskL_, maskR_, maskC_;
   std::vector<Run> runsL_, runsR_, runsC_;
   std::vector<float> histL_, histR_, outL_, outR_;

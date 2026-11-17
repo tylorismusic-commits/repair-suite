@@ -28,6 +28,12 @@ constexpr double kSpecX = 56.0;
 constexpr double kSpecY = 190.0;
 constexpr double kSpecW = 700.0;
 constexpr double kSpecH = 360.0;
+constexpr double kPresetX = 356.0;
+constexpr double kPresetY = 22.0;
+constexpr double kPresetW = 320.0;
+constexpr double kPresetH = 30.0;
+constexpr double kListY = 56.0;
+constexpr double kListRow = 20.0;
 
 struct Rgb {
   double r, g, b;
@@ -164,6 +170,39 @@ void Panel::text(cairo_t* cr, const char* s, double x, double y, double size,
   }
   cairo_move_to(cr, tx, y);
   cairo_show_text(cr, s);
+}
+
+std::vector<int> presetOrder() {
+  static const std::vector<int> order = [] {
+    std::vector<int> v;
+    for (int i = 0; i < static_cast<int>(factoryPresets().size()); ++i) {
+      v.push_back(i);
+    }
+    std::stable_sort(v.begin(), v.end(), [](int a, int b) {
+      const int c = std::strcmp(factoryPresets()[a].category,
+                                factoryPresets()[b].category);
+      if (c != 0) {
+        return c < 0;
+      }
+      return std::strcmp(factoryPresets()[a].name,
+                         factoryPresets()[b].name) < 0;
+    });
+    return v;
+  }();
+  return order;
+}
+
+int presetCategoryCount() {
+  int count = 0;
+  const char* last = nullptr;
+  for (int i : presetOrder()) {
+    const char* category = factoryPresets()[static_cast<size_t>(i)].category;
+    if (!last || std::strcmp(last, category) != 0) {
+      ++count;
+      last = category;
+    }
+  }
+  return count;
 }
 
 void Panel::addKnob(uint32_t param, double x, double y, double r) {
@@ -328,11 +367,13 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
       }
       break;
     default:  // OUT
-      addKnob(P_INPUT, x0, y1, 56);
-      addKnob(P_OUTPUT, x0 + step, y1, 56);
-      addKnob(P_DC_FREQ, x0 + 2 * step, y1, 56);
+      addKnob(P_INPUT, x0, 350, 56);
+      addKnob(P_OUTPUT, x0 + step, 350, 56);
+      addKnob(P_DC_FREQ, x0 + 2 * step, 350, 56);
       addToggle(P_DELTA, 140, 160, 120, 40, "DELTA");
       addToggle(P_DC_ON, 280, 160, 150, 40, "DC FILTER");
+      addButton(460, 160, 130, 40, "ANALYZE", 20);
+      addButton(610, 160, 130, 40, "APPLY", 21);
       break;
   }
 }
@@ -350,6 +391,19 @@ void Panel::tick(Shared& shared, PanelState& state) {
   state.transportValid = shared.transportValid.load(std::memory_order_relaxed);
   state.editCount = shared.editCount.load(std::memory_order_relaxed);
   state.sampleRate = shared.sampleRate.load(std::memory_order_relaxed);
+  if (state.transportValid) {
+    if (transportSeen_ && state.editCount > 0 &&
+        std::fabs(state.transportSeconds - lastTransport_) > 2.0) {
+      state.timelineStale = true;
+    }
+    lastTransport_ = state.transportSeconds;
+    transportSeen_ = true;
+  }
+  if (state.editCount == 0) {
+    state.timelineStale = false;
+  } else if (!state.specValid) {
+    state.timelineStale = true;
+  }
   if (state.diffMode && state.editCount != diffEditCount_) {
     rebuildDiff(shared, state);
   }
@@ -389,6 +443,8 @@ void Panel::loadCapture(Shared& shared, PanelState& state) {
     undoStack_.clear();
     redoStack_.clear();
     diffValid_ = false;
+    state.timelineStale = false;
+    transportSeen_ = false;
     buildSpectrogram(state);
   }
 }
@@ -869,7 +925,6 @@ void Panel::matchEdits(Shared& shared, PanelState& state) {
   if (total <= 0.0 || duration <= 0.0) {
     return;
   }
-  // Template energy in the selected band.
   const int row0 = static_cast<int>((std::min(state.selY0, state.selY1) -
                                      kSpecY) / kSpecH * state.specH);
   const int row1 = static_cast<int>((std::max(state.selY0, state.selY1) -
@@ -882,39 +937,67 @@ void Panel::matchEdits(Shared& shared, PanelState& state) {
   const int col1 = static_cast<int>(
       (plotTime(state, std::max(state.selX0, state.selX1)) -
        state.specStartTime) / std::max(1.0e-9, total) * state.specW);
-  double target = 0.0;
-  int samples = 0;
-  for (int c = std::max(0, col0); c <= std::min(state.specW - 1, col1); ++c) {
-    for (int r = r0; r <= r1; ++r) {
-      target += std::pow(10.0, specMag_[static_cast<size_t>(r * state.specW + c)] / 20.0);
-      ++samples;
-    }
-  }
-  if (samples == 0 || target <= 0.0) {
+  const int c0 = std::clamp(std::min(col0, col1), 0, state.specW - 1);
+  const int c1 = std::clamp(std::max(col0, col1), 0, state.specW - 1);
+  const int rows = r1 - r0 + 1;
+  if (rows <= 0 || c1 < c0) {
     return;
   }
-  target /= samples;
-  std::vector<double> columns(static_cast<size_t>(state.specW), 0.0);
-  for (int c = 0; c < state.specW; ++c) {
-    double e = 0.0;
+
+  // Normalised spectral template in the selected band.
+  std::vector<float> templ(static_cast<size_t>(rows), 0.0f);
+  for (int c = c0; c <= c1; ++c) {
     for (int r = r0; r <= r1; ++r) {
-      e += std::pow(10.0, specMag_[static_cast<size_t>(r * state.specW + c)] / 20.0);
+      templ[static_cast<size_t>(r - r0)] +=
+          std::pow(10.0, specMag_[static_cast<size_t>(r * state.specW + c)] /
+                             20.0);
     }
-    columns[static_cast<size_t>(c)] = e / std::max(1, r1 - r0 + 1);
   }
+  float normT = 0.0f;
+  for (float v : templ) {
+    normT += v * v;
+  }
+  normT = std::sqrt(std::max(1.0e-12f, normT));
+
+  struct Match {
+    int col = 0;
+    float score = 0.0f;
+  };
+  std::vector<Match> matches;
+  std::vector<float> shape(static_cast<size_t>(rows));
+  for (int c = 2; c < state.specW - 2; ++c) {
+    float normC = 0.0f;
+    float dot = 0.0f;
+    for (int r = r0; r <= r1; ++r) {
+      const float v =
+          std::pow(10.0, specMag_[static_cast<size_t>(r * state.specW + c)] /
+                             20.0);
+      shape[static_cast<size_t>(r - r0)] = v;
+      dot += v * templ[static_cast<size_t>(r - r0)];
+      normC += v * v;
+    }
+    normC = std::sqrt(std::max(1.0e-12f, normC));
+    const float score = dot / (normT * normC);
+    if (score < 0.85f) {
+      continue;
+    }
+    // Local maximum in similarity.
+    const float prev =
+        std::pow(10.0, specMag_[static_cast<size_t>(r0 * state.specW + c - 1)] /
+                           20.0);
+    if (score < prev) {
+      continue;
+    }
+    matches.push_back({c, score});
+  }
+  std::sort(matches.begin(), matches.end(),
+            [](const Match& a, const Match& b) { return a.score > b.score; });
+
   std::vector<SpectralEdit> added;
   double lastTime = -1.0e9;
-  for (int c = 2; c < state.specW - 2; ++c) {
-    const double e = columns[static_cast<size_t>(c)];
-    if (e < target * 0.8) {
-      continue;
-    }
-    if (e < columns[static_cast<size_t>(c - 1)] ||
-        e < columns[static_cast<size_t>(c + 1)]) {
-      continue;
-    }
+  for (const Match& m : matches) {
     const double t = state.specStartTime +
-                     static_cast<double>(c) / state.specW * total;
+                     static_cast<double>(m.col) / state.specW * total;
     if (t < state.specStartTime + duration * 1.2 ||
         t + duration > state.specStartTime + total ||
         t - lastTime < duration * 1.2) {
@@ -937,8 +1020,7 @@ void Panel::matchEdits(Shared& shared, PanelState& state) {
   pushUndo(shared);
   for (const auto& edit : added) {
     bridge->addEdit(edit.startTime, edit.endTime, edit.left.data(),
-                    edit.right.data(),
-                    static_cast<int>(edit.left.size()));
+                    edit.right.data(), static_cast<int>(edit.left.size()));
   }
   state.editCount = bridge->editCount();
   diffValid_ = false;
@@ -1155,6 +1237,94 @@ void Panel::updateSelectionBoundsFromMask(PanelState& state) {
   state.selY1 = kSpecY + static_cast<double>(maxR + 1) / state.specH * kSpecH;
 }
 
+
+void Panel::drawAnalysis(cairo_t* cr, const Shared& shared) const {
+  const bool ready = shared.analysisReady.load(std::memory_order_relaxed);
+  const float progress =
+      shared.analysisProgress.load(std::memory_order_relaxed);
+  const float humHz = shared.analysisHumHz.load(std::memory_order_relaxed);
+  const float humDb = shared.analysisHumDb.load(std::memory_order_relaxed);
+  const float noiseDb = shared.analysisNoiseDb.load(std::memory_order_relaxed);
+  const float clipPct = shared.analysisClipPct.load(std::memory_order_relaxed);
+  const float clicks =
+      shared.analysisClickRate.load(std::memory_order_relaxed);
+  const float reverb = shared.analysisReverbSec.load(std::memory_order_relaxed);
+  char line[220];
+  if (progress > 0.0f && !ready) {
+    std::snprintf(line, sizeof(line), "ANALYZING  %.0f%%",
+                  std::clamp(progress, 0.0f, 1.0f) * 100.0f);
+  } else if (!ready) {
+    std::snprintf(line, sizeof(line), "ANALYZE 3 s OF INPUT");
+  } else if (humHz > 0.0f) {
+    std::snprintf(line, sizeof(line),
+                  "HUM %.0f Hz %.0f dB   NOISE %.0f dB   CLIP %.2f%%   "
+                  "CLICKS %.1f/s   REVERB %.2f s",
+                  humHz, humDb, noiseDb, clipPct, clicks, reverb);
+  } else {
+    std::snprintf(line, sizeof(line),
+                  "HUM none   NOISE %.0f dB   CLIP %.2f%%   CLICKS %.1f/s   "
+                  "REVERB %.2f s",
+                  noiseDb, clipPct, clicks, reverb);
+  }
+  text(cr, line, 140, 214, 13, 0, ready ? kText.r : kDim.r,
+       ready ? kText.g : kDim.g, ready ? kText.b : kDim.b);
+  if (progress > 0.0f && !ready) {
+    setRgb(cr, Rgb{0.06, 0.09, 0.10});
+    cairo_rectangle(cr, 140, 224, 600, 6);
+    cairo_fill(cr);
+    setRgb(cr, kAccent);
+    cairo_rectangle(cr, 140, 224, 600 * std::clamp(progress, 0.0f, 1.0f), 6);
+    cairo_fill(cr);
+  }
+  text(cr, "ANALYZE measures the raw input and APPLY suggests safe starts",
+       140, 238, 11, 0, kDim.r, kDim.g, kDim.b);
+}
+
+void Panel::applyAnalysis(Shared& shared) {
+  if (!shared.analysisReady.load(std::memory_order_relaxed)) {
+    return;
+  }
+  const float humHz = shared.analysisHumHz.load(std::memory_order_relaxed);
+  const float humDb = shared.analysisHumDb.load(std::memory_order_relaxed);
+  const float noiseDb = shared.analysisNoiseDb.load(std::memory_order_relaxed);
+  const float clipPct = shared.analysisClipPct.load(std::memory_order_relaxed);
+  const float clicks =
+      shared.analysisClickRate.load(std::memory_order_relaxed);
+  const float reverb = shared.analysisReverbSec.load(std::memory_order_relaxed);
+
+  if (humHz > 0.0f && humDb > -60.0f) {
+    shared.set(P_HUM_ON, 1.0);
+    shared.set(P_HUM_AUTO, 0.0);
+    shared.set(P_HUM_FREQ, std::clamp(static_cast<double>(humHz), 40.0, 70.0));
+    shared.set(P_HUM_HARMONICS, 8.0);
+    shared.set(P_HUM_DEPTH, std::clamp(static_cast<double>(-humDb + 6.0f), 12.0, 60.0));
+  } else {
+    shared.set(P_HUM_ON, 0.0);
+  }
+  if (noiseDb < -45.0f) {
+    shared.set(P_NOISE_ON, 1.0);
+    shared.set(P_NOISE_REDUCTION,
+               std::clamp(static_cast<double>(-noiseDb - 30.0f), 6.0, 24.0));
+  } else {
+    shared.set(P_NOISE_ON, 0.0);
+  }
+  shared.set(P_CLIP_ON, clipPct > 0.01f ? 1.0 : 0.0);
+  shared.set(P_CLIP_AUTO, 1.0);
+  if (clicks > 0.3f) {
+    shared.set(P_CLICK_ON, 1.0);
+    shared.set(P_CLICK_SENS, 5.0);
+  } else {
+    shared.set(P_CLICK_ON, 0.0);
+  }
+  if (reverb > 0.4f) {
+    shared.set(P_VERB_ON, 1.0);
+    shared.set(P_VERB_TAIL,
+               std::clamp(static_cast<double>(reverb), 0.3, 2.5));
+  } else {
+    shared.set(P_VERB_ON, 0.0);
+  }
+}
+
 void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
                              const PanelState& state) const {
   const bool bridgeAvailable =
@@ -1305,8 +1475,13 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
                 state.editCount, 20.0, 20000.0);
   text(cr, status, kSpecX, kSpecY + kSpecH + 24, 11, 0, kDim.r, kDim.g,
        kDim.b);
-  text(cr, "drag a box on the spectrogram", kSpecX + kSpecW,
-       kSpecY + kSpecH + 24, 11, 2, kDim.r, kDim.g, kDim.b);
+  if (state.timelineStale) {
+    text(cr, "timeline moved — re-capture edits", kSpecX + kSpecW,
+         kSpecY + kSpecH + 24, 11, 2, kAmber.r, kAmber.g, kAmber.b);
+  } else {
+    text(cr, "drag a box on the spectrogram", kSpecX + kSpecW,
+         kSpecY + kSpecH + 24, 11, 2, kDim.r, kDim.g, kDim.b);
+  }
 }
 
 void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
@@ -1332,6 +1507,8 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
   drawHeader(cr, shared, state);
   if (state.tab == 5) {
     drawSpectralPage(cr, shared, state);
+  } else if (state.tab == 6) {
+    drawAnalysis(cr, shared);
   }
 
   for (const Widget& w : widgets_) {
@@ -1363,7 +1540,72 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
   if (editing_) {
     drawTextEntry(cr, shared, state);
   }
+  if (state.presetOpen) {
+    drawPresetList(cr, shared, state);
+  }
   cairo_restore(cr);
+}
+
+
+void Panel::drawPresetBar(cairo_t* cr, const Shared& shared,
+                          const PanelState& state) const {
+  (void)shared;
+  roundRect(cr, kPresetX, kPresetY, kPresetW, kPresetH, 5);
+  setRgb(cr, Rgb{0.04, 0.055, 0.062});
+  cairo_fill(cr);
+  setRgb(cr, kAccent, 0.55);
+  cairo_set_line_width(cr, 1.0);
+  roundRect(cr, kPresetX + 0.5, kPresetY + 0.5, kPresetW - 1, kPresetH - 1, 5);
+  cairo_stroke(cr);
+  text(cr, "‹", kPresetX + 16, kPresetY + 21, 19, 1, kDim.r, kDim.g, kDim.b);
+  text(cr, "›", kPresetX + kPresetW - 16, kPresetY + 21, 19, 1, kDim.r, kDim.g,
+       kDim.b);
+  const auto& presets = factoryPresets();
+  std::string label = "Init";
+  if (state.presetIndex >= 0 &&
+      state.presetIndex < static_cast<int>(presets.size())) {
+    label = presets[static_cast<size_t>(state.presetIndex)].name;
+  }
+  if (state.presetDirty) {
+    label += " *";
+  }
+  text(cr, label.c_str(), kPresetX + kPresetW * 0.5, kPresetY + 20, 12, 1,
+       kText.r, kText.g, kText.b);
+}
+
+void Panel::drawPresetList(cairo_t* cr, const Shared& shared,
+                           const PanelState& state) const {
+  (void)shared;
+  const auto& presets = factoryPresets();
+  const auto& order = presetOrder();
+  const double h = 8.0 + order.size() * kListRow +
+                   presetCategoryCount() * 16.0;
+  roundRect(cr, kPresetX, kListY, kPresetW, h, 5);
+  setRgb(cr, Rgb{0.035, 0.045, 0.052}, 0.98);
+  cairo_fill(cr);
+  setRgb(cr, kAccent, 0.7);
+  cairo_set_line_width(cr, 1.0);
+  roundRect(cr, kPresetX + 0.5, kListY + 0.5, kPresetW - 1, h - 1, 5);
+  cairo_stroke(cr);
+  double y = kListY + 6;
+  const char* lastCategory = nullptr;
+  for (int i : order) {
+    const auto& p = presets[static_cast<size_t>(i)];
+    if (!lastCategory || std::strcmp(lastCategory, p.category) != 0) {
+      lastCategory = p.category;
+      text(cr, p.category, kPresetX + 14, y + 12, 10, 0, kAccent.r, kAccent.g,
+           kAccent.b);
+      y += 16;
+    }
+    if (i == state.presetIndex) {
+      roundRect(cr, kPresetX + 6, y + 1, kPresetW - 12, kListRow - 2, 3);
+      setRgb(cr, kAccent, 0.22);
+      cairo_fill(cr);
+    }
+    text(cr, p.name, kPresetX + 26, y + 14, 11.5, 0, kText.r, kText.g,
+         kText.b);
+    y += kListRow;
+  }
 }
 
 void Panel::drawHeader(cairo_t* cr, const Shared& shared,
@@ -1372,6 +1614,7 @@ void Panel::drawHeader(cairo_t* cr, const Shared& shared,
   (void)state;
   text(cr, "REPAIR SUITE", 90, 50, 26, 0, kText.r, kText.g, kText.b);
   text(cr, "restoration strip", 92, 68, 11, 0, kDim.r, kDim.g, kDim.b);
+  drawPresetBar(cr, shared, state);
   text(cr, "CLIP → CLICK → HUM → NOISE → VERB → SPEC → OUT", 1160, 45, 11, 2,
        kDim.r, kDim.g, kDim.b);
 }
@@ -1655,9 +1898,13 @@ bool Panel::pointerDown(Shared& shared, PanelState& state, double x, double y,
           } else if (w.action == 18) {
             state.previewMode = !state.previewMode;
             setPreview(shared, state);
-          } else if (w.action == 19) {
-            matchEdits(shared, state);
           }
+        } else if (w.action == 19) {
+          matchEdits(shared, state);
+        } else if (w.action == 20) {
+          shared.analyzeRequest.store(true, std::memory_order_relaxed);
+        } else if (w.action == 21) {
+          applyAnalysis(shared);
         }
         return true;
     }
@@ -1844,15 +2091,51 @@ void Panel::applyPreset(Shared& shared, PanelState& state, int index) const {
   }
   state.presetIndex = index;
   state.presetDirty = false;
+  state.presetOpen = 0;
 }
 
 bool Panel::handlePresetClick(Shared& shared, PanelState& state, double x,
                               double y) {
-  (void)shared;
-  (void)state;
-  (void)x;
-  (void)y;
-  return false;
+  const int count = static_cast<int>(factoryPresets().size());
+  if (y >= kPresetY && y <= kPresetY + kPresetH && x >= kPresetX &&
+      x <= kPresetX + kPresetW) {
+    if (x <= kPresetX + 30) {
+      const int next = state.presetIndex <= 0 ? 0 : state.presetIndex - 1;
+      applyPreset(shared, state, next);
+    } else if (x >= kPresetX + kPresetW - 30) {
+      const int next = state.presetIndex < 0 ? 0 : state.presetIndex + 1;
+      applyPreset(shared, state, std::min(count - 1, next));
+    } else {
+      state.presetOpen = state.presetOpen ? 0 : 1;
+    }
+    return true;
+  }
+  if (!state.presetOpen) {
+    return false;
+  }
+  const auto& order = presetOrder();
+  const double h = 8.0 + order.size() * kListRow +
+                   presetCategoryCount() * 16.0;
+  if (x < kPresetX || x > kPresetX + kPresetW || y < kListY ||
+      y > kListY + h) {
+    state.presetOpen = 0;
+    return true;
+  }
+  double rowY = kListY + 6;
+  const char* lastCategory = nullptr;
+  for (int i : order) {
+    const auto& p = factoryPresets()[static_cast<size_t>(i)];
+    if (!lastCategory || std::strcmp(lastCategory, p.category) != 0) {
+      lastCategory = p.category;
+      rowY += 16.0;
+    }
+    if (y >= rowY && y < rowY + kListRow) {
+      applyPreset(shared, state, i);
+      return true;
+    }
+    rowY += kListRow;
+  }
+  return true;
 }
 
 } // namespace repair

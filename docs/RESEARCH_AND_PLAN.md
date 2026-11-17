@@ -769,11 +769,11 @@ as audition-only in the first alpha.
   threshold; mix and output headroom.  Histogram/waveform overlay UI still to
   come.
 - [x] De-Click click/crackle detection with median-residual detection and
-  cubic repair.  AR repair and thump/dropout modes still to come.
+  cubic repair; thump and dropout modes added.
 - [x] De-Hum notch + automatic 50/60 Hz harmonic scoring.
 - [x] Precision hum mode (adaptive harmonic cancellation).
-- [x] De-Noise learn + spectral subtraction + transient hold.  Adaptive
-  profile tracking and tonal split still to come.
+- [x] De-Noise learn + spectral subtraction + transient hold; adaptive
+  bootstrap added.  Tonal split still to come.
 - [x] De-Reverb late-tail reduction sharing the De-Noise STFT.  Music-mode
   tuning and WPE speech mode still to come.
 - Chain, per-stage bypass/mix, meters, Delta, typed values, presets v1.
@@ -791,15 +791,16 @@ as audition-only in the first alpha.
 - [x] Spectral-edit state blob in CLAP and LV2 state.
 - [x] Undo/redo.
 - [x] Preview loop and original/processed difference display.
-- [ ] Stale-timeline warning.
+- [x] Stale-timeline warning.
 
 ### Phase 3 — completeness and release polish
 
 - [x] Patch/Copy, Repair and Amplify spectral tools.
 - [x] Basic Match (repeat the last repair at similar band events).
 - [x] Precision hum mode.
-- [ ] Auto Analyze.
+- [x] Auto Analyze (three-second input measurement + conservative apply).
 - CPU pass, low-latency denoise mode, state-size limits.
+- [x] Preset browser UI and dirty-state navigation.
 - Preset tuning against the manual test matrix.
 - Documentation, screenshots, release packaging, CI matrix.
 - `0.1.0` release with LV2 + CLAP tarballs.

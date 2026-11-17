@@ -272,6 +272,7 @@ void run(LV2_Handle handle, uint32_t frames) {
   p->shared.captureFreeze.store(false, std::memory_order_relaxed);
   p->shared.clearCapture.store(false, std::memory_order_relaxed);
   p->shared.clearEdits.store(false, std::memory_order_relaxed);
+  p->shared.analyzeRequest.store(false, std::memory_order_relaxed);
   if (p->shared.profilePending.exchange(false, std::memory_order_acq_rel)) {
     float profile[repair::kProfileBins] = {};
     const int bins = p->shared.getProfile(profile, repair::kProfileBins);
@@ -296,6 +297,22 @@ void run(LV2_Handle handle, uint32_t frames) {
     }
   }
 
+  p->shared.analysisReady.store(p->meters.analysisReady,
+                                std::memory_order_relaxed);
+  p->shared.analysisProgress.store(p->meters.analysisProgress,
+                                   std::memory_order_relaxed);
+  p->shared.analysisHumHz.store(p->meters.analysisHumHz,
+                                std::memory_order_relaxed);
+  p->shared.analysisHumDb.store(p->meters.analysisHumDb,
+                                std::memory_order_relaxed);
+  p->shared.analysisNoiseDb.store(p->meters.analysisNoiseDb,
+                                  std::memory_order_relaxed);
+  p->shared.analysisClipPct.store(p->meters.analysisClipPct,
+                                  std::memory_order_relaxed);
+  p->shared.analysisClickRate.store(p->meters.analysisClickRate,
+                                    std::memory_order_relaxed);
+  p->shared.analysisReverbSec.store(p->meters.analysisReverbSec,
+                                    std::memory_order_relaxed);
   if (p->compGr) *p->compGr = p->meters.grDb;
   if (p->sibGr) *p->sibGr = p->meters.noiseGrDb;
   if (p->harshGr) *p->harshGr = p->meters.verbGrDb;

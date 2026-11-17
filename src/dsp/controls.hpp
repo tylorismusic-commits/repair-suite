@@ -64,6 +64,7 @@ struct Controls {
 
   // One-shot UI actions, not host parameters.
   bool captureArm = false;
+  bool analyze = false;
   bool captureFreeze = false;
   bool clearCapture = false;
   bool clearEdits = false;
@@ -88,6 +89,14 @@ struct Meters {
   double transportSeconds = 0.0;
   bool transportValid = false;
   int editCount = 0;
+  bool analysisReady = false;
+  float analysisProgress = 0.0f;
+  float analysisHumHz = 0.0f;
+  float analysisHumDb = -120.0f;
+  float analysisNoiseDb = -120.0f;
+  float analysisClipPct = 0.0f;
+  float analysisClickRate = 0.0f;
+  float analysisReverbSec = 0.0f;
 };
 
 } // namespace repair

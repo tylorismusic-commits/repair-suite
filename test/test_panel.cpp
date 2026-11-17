@@ -131,7 +131,7 @@ int main() {
 
     spectralPanel.pointerDown(spectralShared, spectralState, 1052, 303, false);
     spectralPanel.pointerUp(spectralShared, spectralState);
-    assert(capture.editCount() >= 1);
+    assert(capture.editCount() > 1);
 
     spectralPanel.pointerDown(spectralShared, spectralState, 706, 607, false);
     spectralPanel.pointerUp(spectralShared, spectralState);
@@ -180,6 +180,59 @@ int main() {
     assert(capture.editCount() > beforeZoomEdit);
     cairo_destroy(sctx);
     cairo_surface_destroy(ss);
+  }
+
+  {
+    // Preset bar: next arrow applies a preset, center opens the list.
+    Shared presetShared;
+    PanelState presetState;
+    Panel presetPanel;
+    presetPanel.loadFont("./assets/fonts");
+    cairo_surface_t* psurf =
+        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, kPanelWidth, kPanelHeight);
+    cairo_t* pcr = cairo_create(psurf);
+    presetPanel.draw(pcr, presetShared, presetState);
+    presetPanel.pointerDown(presetShared, presetState, 356 + 320 - 16, 37,
+                            false);
+    presetPanel.pointerUp(presetShared, presetState);
+    assert(presetState.presetIndex == 0);
+    presetPanel.pointerDown(presetShared, presetState, 356 + 160, 37, false);
+    presetPanel.pointerUp(presetShared, presetState);
+    assert(presetState.presetOpen == 1);
+    presetPanel.draw(pcr, presetShared, presetState);
+    presetPanel.pointerDown(presetShared, presetState, 356 + 160, 90, false);
+    presetPanel.pointerUp(presetShared, presetState);
+    assert(presetState.presetOpen == 0);
+    cairo_destroy(pcr);
+    cairo_surface_destroy(psurf);
+  }
+
+  {
+    // Auto Analyze apply sets the modules from the published result.
+    Shared a;
+    a.analysisReady.store(true);
+    a.analysisHumHz.store(60.0f);
+    a.analysisHumDb.store(-30.0f);
+    a.analysisNoiseDb.store(-55.0f);
+    a.analysisClipPct.store(0.5f);
+    a.analysisClickRate.store(2.0f);
+    a.analysisReverbSec.store(0.8f);
+    PanelState st;
+    st.tab = 6;
+    Panel p2;
+    p2.loadFont("./assets/fonts");
+    cairo_surface_t* as =
+        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, kPanelWidth, kPanelHeight);
+    cairo_t* ac = cairo_create(as);
+    p2.draw(ac, a, st);
+    p2.pointerDown(a, st, 675, 180, false);
+    p2.pointerUp(a, st);
+    assert(a.get(P_HUM_ON) == 1.0);
+    assert(std::fabs(a.get(P_HUM_FREQ) - 60.0) < 1.0e-6);
+    assert(a.get(P_CLIP_ON) == 1.0);
+    assert(a.get(P_VERB_ON) == 1.0);
+    cairo_destroy(ac);
+    cairo_surface_destroy(as);
   }
 
   std::printf("panel tests passed\n");

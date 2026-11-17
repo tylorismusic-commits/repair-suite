@@ -276,6 +276,56 @@ double toneMag(const std::vector<float>& x, float hz, int start, int count) {
   return std::sqrt(re * re + im * im) / (0.5 * count);
 }
 
+
+void testDeclickModes() {
+  const int n = 12000;
+  std::vector<float> clean(n), in(n);
+  for (int i = 0; i < n; ++i) {
+    clean[i] = 0.2f * sine(i, 1000.0);
+    in[i] = clean[i];
+  }
+  for (int i = 0; i < 10; ++i) {
+    in[static_cast<size_t>(5000 + i)] = 0.0f;
+  }
+  repair::Declick dropout;
+  dropout.prepare(kSr);
+  repair::Controls c;
+  c.clickOn = true;
+  c.clickLink = true;
+  c.clickSensitivity = 5.0f;
+  c.clickWidthMs = 20.0f;
+  c.clickMode = 3;
+  dropout.setControls(c);
+  std::vector<float> l = in;
+  std::vector<float> r = in;
+  dropout.process(l.data(), r.data(), n);
+  assert(dropout.clickCount() > 0);
+  const int at = 5000 + dropout.latencySamples();
+  for (int i = 0; i < 10; ++i) {
+    assert(std::fabs(l[static_cast<size_t>(at + i)] -
+                     clean[static_cast<size_t>(5000 + i)]) < 0.05f);
+  }
+
+  // Thump mode is a distinct low-frequency detector; it must stay finite and
+  // detect the synthetic low-frequency event.
+  std::vector<float> thump = clean;
+  for (int i = 0; i < 200; ++i) {
+    thump[static_cast<size_t>(3000 + i)] +=
+        0.7f * std::exp(-static_cast<float>(i) / 50.0f);
+  }
+  repair::Declick thumpDeclick;
+  thumpDeclick.prepare(kSr);
+  c.clickMode = 2;
+  thumpDeclick.setControls(c);
+  std::vector<float> tl = thump;
+  std::vector<float> tr = thump;
+  thumpDeclick.process(tl.data(), tr.data(), n);
+  assert(thumpDeclick.clickCount() > 0);
+  for (float v : tl) {
+    assert(std::isfinite(v));
+  }
+}
+
 void testDehum() {
   const int n = 96000;
   std::vector<float> in(n), l, r;
@@ -403,6 +453,40 @@ void testDenoise() {
               20.0 * std::log10(outRms / inRms));
   assert(outRms < inRms * 0.5);
 
+  // Adaptive mode bootstraps a profile without pressing Learn.
+  {
+    repair::Stft adaptiveStft;
+    adaptiveStft.prepare(kSr, 2048, 512);
+    repair::Denoise adaptive;
+    adaptive.prepare(kSr, adaptiveStft.bins(), adaptiveStft.hopSize());
+    repair::Controls ac;
+    ac.noiseOn = true;
+    ac.noiseAdaptive = true;
+    ac.noiseReductionDb = 20.0f;
+    ac.noiseSmoothing = 5.0f;
+    ac.noiseMix = 100.0f;
+    adaptive.setControls(ac);
+    seed = 9;
+    std::vector<float> al(n), ar(n), orig(n);
+    for (int i = 0; i < n; ++i) {
+      orig[i] = 0.05f * noise(seed);
+      al[i] = ar[i] = orig[i];
+    }
+    for (int startBlock = 0; startBlock < n; startBlock += 512) {
+      const int len = std::min(512, n - startBlock);
+      adaptiveStft.process(
+          al.data() + startBlock, ar.data() + startBlock, len,
+          [&](float* reL, float* imL, float* reR, float* imR, int bins) {
+            adaptive.processBins(reL, imL, reR, imR, bins);
+          });
+    }
+    const double inRms = rmsRange(orig, start, count);
+    const double outRms = rmsRange(al, start, count);
+    std::printf("adaptive denoise %.1f dB\n",
+                20.0 * std::log10(outRms / inRms));
+    assert(outRms < inRms * 0.8);
+  }
+
   // A wanted tone survives the learned noise profile.
   seed = 3;
   std::vector<float> tl(n), tr(n), tone(n);
@@ -528,6 +612,41 @@ void testProfilePersistence() {
   }
 }
 
+
+void testAnalysis() {
+  repair::Engine engine;
+  engine.prepare(kSr);
+  repair::Controls c;
+  c.analyze = true;
+  engine.setControls(c);
+  repair::Meters meters;
+  const int n = 3 * static_cast<int>(kSr);
+  std::vector<float> l(512), r(512);
+  for (int start = 0; start < n; start += 512) {
+    const int len = std::min(512, n - start);
+    for (int i = 0; i < len; ++i) {
+      const int at = start + i;
+      float v = 0.2f * sine(at, 50.0) + 0.1f * sine(at, 1000.0) +
+                0.01f * sine(at, 7311.0);
+      if (at >= 1000 && at < 1100) {
+        v = 1.0f;
+      }
+      l[static_cast<size_t>(i)] = r[static_cast<size_t>(i)] = v;
+    }
+    engine.process(l.data(), r.data(), len, meters,
+                   start / static_cast<double>(kSr), true);
+  }
+  assert(meters.analysisReady);
+  std::printf("analysis hum %.0f Hz %.1f dB noise %.1f dB clip %.2f%% "
+              "clicks %.1f/s reverb %.2f s\n",
+              meters.analysisHumHz, meters.analysisHumDb,
+              meters.analysisNoiseDb, meters.analysisClipPct,
+              meters.analysisClickRate, meters.analysisReverbSec);
+  assert(meters.analysisHumHz > 49.0f && meters.analysisHumHz < 61.0f);
+  assert(meters.analysisHumDb > -30.0f);
+  assert(meters.analysisClipPct > 0.0f);
+}
+
 void testPresets() {
   for (const repair::Preset& p : repair::factoryPresets()) {
     repair::Shared s;
@@ -558,10 +677,12 @@ int main() {
   testEngine();
   testDeclip();
   testDeclick();
+  testDeclickModes();
   testDehum();
   testDenoise();
   testDereverb();
   testProfilePersistence();
+  testAnalysis();
   testPresets();
   std::printf("DSP tests passed\n");
   return 0;

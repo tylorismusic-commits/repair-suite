@@ -39,6 +39,7 @@ public:
     std::fill(smoothGain_.begin(), smoothGain_.end(), 1.0f);
     std::fill(prevPower_.begin(), prevPower_.end(), 0.0f);
     learnFrames_ = 0;
+    adaptiveFrames_ = 0;
     learning_ = false;
     learned_ = false;
     learnControl_ = false;
@@ -127,7 +128,31 @@ public:
       return;  // monitor the noise while learning
     }
 
-    if (!controls_.noiseOn || !controls_.power || !learned_) {
+    if (!controls_.noiseOn || !controls_.power) {
+      lastReductionDb_ = 0.0f;
+      return;
+    }
+    if (!learned_ && controls_.noiseAdaptive && !learning_) {
+      // Bootstrap an adaptive profile from the minimum power seen over the
+      // first second, then start reducing.
+      for (int k = 0; k < bins; ++k) {
+        const float p = power(reL[k], imL[k], reR[k], imR[k]);
+        if (adaptiveFrames_ == 0) {
+          noise_[static_cast<size_t>(k)] = p;
+        } else {
+          noise_[static_cast<size_t>(k)] =
+              std::min(noise_[static_cast<size_t>(k)], p);
+        }
+      }
+      ++adaptiveFrames_;
+      if (adaptiveFrames_ >= std::max(1, static_cast<int>(sr_ / hop_))) {
+        learned_ = true;
+        profileReady_.store(true, std::memory_order_release);
+      }
+      lastReductionDb_ = 0.0f;
+      return;
+    }
+    if (!learned_) {
       lastReductionDb_ = 0.0f;
       return;
     }
@@ -173,6 +198,7 @@ private:
   Controls controls_;
   std::vector<float> noise_, smoothGain_, prevPower_;
   int learnFrames_ = 0;
+  int adaptiveFrames_ = 0;
   int learnLimit_ = 187;
   bool learning_ = false;
   bool learned_ = false;

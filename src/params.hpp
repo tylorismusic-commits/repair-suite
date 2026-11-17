@@ -279,6 +279,15 @@ public:
     profilePending.store(false);
     spectralBridge.store(nullptr, std::memory_order_relaxed);
     sampleRate.store(48000.0f, std::memory_order_relaxed);
+    analyzeRequest.store(false, std::memory_order_relaxed);
+    analysisReady.store(false, std::memory_order_relaxed);
+    analysisProgress.store(0.0f, std::memory_order_relaxed);
+    analysisHumHz.store(0.0f, std::memory_order_relaxed);
+    analysisHumDb.store(-120.0f, std::memory_order_relaxed);
+    analysisNoiseDb.store(-120.0f, std::memory_order_relaxed);
+    analysisClipPct.store(0.0f, std::memory_order_relaxed);
+    analysisClickRate.store(0.0f, std::memory_order_relaxed);
+    analysisReverbSec.store(0.0f, std::memory_order_relaxed);
     for (int i = 0; i < kProfileBins; ++i) {
       noiseProfile[i].store(0.0f);
     }
@@ -386,6 +395,15 @@ public:
   std::atomic<bool> profilePending;
   std::atomic<SpectralBridge*> spectralBridge;
   std::atomic<float> sampleRate;
+  std::atomic<bool> analyzeRequest;
+  std::atomic<bool> analysisReady;
+  std::atomic<float> analysisProgress;
+  std::atomic<float> analysisHumHz;
+  std::atomic<float> analysisHumDb;
+  std::atomic<float> analysisNoiseDb;
+  std::atomic<float> analysisClipPct;
+  std::atomic<float> analysisClickRate;
+  std::atomic<float> analysisReverbSec;
   std::atomic<float> bpm;      // reserved for later tempo-synced capture
   std::atomic<bool> hostTempo;
 
@@ -452,6 +470,7 @@ inline Controls controlsFrom(const Shared& s) noexcept {
   c.specMix = static_cast<float>(s.get(P_SPEC_MIX));
 
   c.captureArm = s.captureActive.load(std::memory_order_relaxed);
+  c.analyze = s.analyzeRequest.load(std::memory_order_relaxed);
   c.captureFreeze = s.captureFreeze.load(std::memory_order_relaxed);
   c.clearCapture = s.clearCapture.load(std::memory_order_relaxed);
   c.clearEdits = s.clearEdits.load(std::memory_order_relaxed);

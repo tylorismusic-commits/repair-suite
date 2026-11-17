@@ -924,6 +924,7 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   s->shared.captureFreeze.store(false, std::memory_order_relaxed);
   s->shared.clearCapture.store(false, std::memory_order_relaxed);
   s->shared.clearEdits.store(false, std::memory_order_relaxed);
+  s->shared.analyzeRequest.store(false, std::memory_order_relaxed);
   if (s->shared.profilePending.exchange(false, std::memory_order_acq_rel)) {
     float profile[repair::kProfileBins] = {};
     const int bins = s->shared.getProfile(profile, repair::kProfileBins);
@@ -966,6 +967,22 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
   s->shared.transportValid.store(s->meters.transportValid, std::memory_order_relaxed);
   s->shared.noiseFloorDb.store(s->meters.noiseFloorDb, std::memory_order_relaxed);
   s->shared.editCount.store(s->meters.editCount, std::memory_order_relaxed);
+  s->shared.analysisReady.store(s->meters.analysisReady,
+                                std::memory_order_relaxed);
+  s->shared.analysisProgress.store(s->meters.analysisProgress,
+                                   std::memory_order_relaxed);
+  s->shared.analysisHumHz.store(s->meters.analysisHumHz,
+                                std::memory_order_relaxed);
+  s->shared.analysisHumDb.store(s->meters.analysisHumDb,
+                                std::memory_order_relaxed);
+  s->shared.analysisNoiseDb.store(s->meters.analysisNoiseDb,
+                                  std::memory_order_relaxed);
+  s->shared.analysisClipPct.store(s->meters.analysisClipPct,
+                                  std::memory_order_relaxed);
+  s->shared.analysisClickRate.store(s->meters.analysisClickRate,
+                                    std::memory_order_relaxed);
+  s->shared.analysisReverbSec.store(s->meters.analysisReverbSec,
+                                    std::memory_order_relaxed);
   noteHostChanges(s);
   return CLAP_PROCESS_CONTINUE;
 }

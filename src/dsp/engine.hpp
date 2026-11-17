@@ -13,6 +13,7 @@
 #include <hdsp/db.hpp>
 #include <hdsp/smoother.hpp>
 
+#include "analyze.hpp"
 #include "controls.hpp"
 #include "declip.hpp"
 #include "declick.hpp"
@@ -28,6 +29,7 @@ class Engine {
 public:
   void prepare(float sampleRate, int /*maxBlock*/ = 0) noexcept {
     sr_ = sampleRate > 0.0f ? sampleRate : 48000.0f;
+    analyzer_.prepare(sr_);
     declip_.prepare(sr_);
     declick_.prepare(sr_);
     dehum_.prepare(sr_);
@@ -46,6 +48,9 @@ public:
     controls_ = c;
     inputGain_.setTarget(hdsp::dbToGain(c.inputDb));
     outputGain_.setTarget(hdsp::dbToGain(c.outputDb));
+    if (c.analyze) {
+      analyzer_.start();
+    }
     declip_.setControls(c);
     declick_.setControls(c);
     dehum_.setControls(c);
@@ -57,7 +62,10 @@ public:
     }
     if (c.clearCapture) {
       capture_.reset();
-      declip_.setControls(c);
+      if (c.analyze) {
+      analyzer_.start();
+    }
+    declip_.setControls(c);
     declick_.setControls(c);
     dehum_.setControls(c);
     denoise_.setControls(c);
@@ -73,6 +81,7 @@ public:
   void setTempo(float /*bpm*/, bool /*host*/) noexcept {}
 
   void reset() noexcept {
+    analyzer_.reset();
     declip_.reset();
     declick_.reset();
     dehum_.reset();
@@ -103,6 +112,7 @@ public:
                                          std::fabs(right[i])));
     }
 
+    analyzer_.process(left, right, frames);
     const float inGain = inputGain_.next();
     for (int i = 0; i < frames; ++i) {
       left[i] *= inGain;
@@ -164,6 +174,15 @@ public:
     meters.transportSeconds = hostTime;
     meters.transportValid = hostTimeValid;
     meters.editCount = capture_.editCount();
+    const auto& ar = analyzer_.result();
+    meters.analysisReady = analyzer_.ready();
+    meters.analysisProgress = analyzer_.progress();
+    meters.analysisHumHz = ar.humHz;
+    meters.analysisHumDb = ar.humDb;
+    meters.analysisNoiseDb = ar.noiseDb;
+    meters.analysisClipPct = ar.clipPct;
+    meters.analysisClickRate = ar.clickRate;
+    meters.analysisReverbSec = ar.reverbSec;
   }
 
   SpectralCapture& capture() noexcept { return capture_; }
@@ -180,6 +199,7 @@ public:
 private:
   float sr_ = 48000.0f;
   Controls controls_;
+  Analyzer analyzer_;
   Declip declip_;
   Declick declick_;
   Dehum dehum_;

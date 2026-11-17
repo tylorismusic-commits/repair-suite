@@ -55,6 +55,7 @@ struct PanelState {
   double specScroll = 0.0;
   bool diffMode = false;
   bool previewMode = false;
+  bool timelineStale = false;
   static constexpr int kHistory = 240;
   float inHistory[kHistory] = {};
   int inHistoryHead = 0;
@@ -87,6 +88,10 @@ public:
 
   void applyPreset(Shared& shared, PanelState& state, int index) const;
   bool handlePresetClick(Shared& shared, PanelState& state, double x, double y);
+  void drawPresetBar(cairo_t* cr, const Shared& shared,
+                     const PanelState& state) const;
+  void drawPresetList(cairo_t* cr, const Shared& shared,
+                      const PanelState& state) const;
 
 private:
   enum class Kind { Knob, Toggle, Choice, PageTab, Power, Button };
@@ -119,6 +124,8 @@ private:
                      const PanelState& state) const;
   void drawSpectralPage(cairo_t* cr, const Shared& shared,
                         const PanelState& state) const;
+  void drawAnalysis(cairo_t* cr, const Shared& shared) const;
+  void applyAnalysis(Shared& shared);
   void loadCapture(Shared& shared, PanelState& state);
   void buildSpectrogram(PanelState& state);
   void buildMagnitude(const std::vector<float>& left,
@@ -182,6 +189,8 @@ private:
   std::vector<float> specMag_;
   bool diffValid_ = false;
   int diffEditCount_ = -1;
+  double lastTransport_ = 0.0;
+  bool transportSeen_ = false;
 
   cairo_font_face_t* font_ = nullptr;
   void* ft_ = nullptr;

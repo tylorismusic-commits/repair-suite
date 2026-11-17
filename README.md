@@ -1,8 +1,8 @@
 # Repair Suite
 
-**Status: feature-complete alpha.** One CLAP + LV2 plug-in with the automatic
-repair chain and an in-window spectral editor. Manual tuning on real material
-and the preset browser are the remaining release work.
+**Status: release-candidate alpha.** One CLAP + LV2 plug-in with the automatic
+repair chain, Auto Analyze, a preset browser and an in-window spectral editor.
+Manual tuning on real material is the remaining release work.
 
 Repair Suite is a real-time audio repair strip for Linux, in the same visual
 language as Comp Suite, Vocal Suite and Space Suite.
@@ -10,6 +10,8 @@ language as Comp Suite, Vocal Suite and Space Suite.
 ![Repair Suite panel](docs/panel.png)
 
 ![Spectral repair page](docs/spectral.png)
+
+![Auto Analyze page](docs/analyze.png)
 
 ## Signal chain
 
@@ -27,14 +29,28 @@ latency.
 
 - **De-Clip** — flat-top detection, Fast/Balanced/High reconstruction, iterative
   clipping-consistent STFT mode, automatic thresholds, mix and headroom.
-- **De-Click** — median-residual click/crackle detection, stereo-linked cubic
-  repair, sensitivity, width and mix.
+- **De-Click** — click, crackle, thump and dropout detection modes,
+  stereo-linked repair, sensitivity, width and mix.
 - **De-Hum** — notch bank and adaptive sinusoidal precision mode, automatic
   50/60 Hz harmonic detection, odd-only, depth and mix.
-- **De-Noise** — two-second learned profile, spectral subtraction, transient
-  hold, smoothing, reduction and mix. The profile is saved in session state.
+- **De-Noise** — two-second learned profile or adaptive bootstrap, spectral
+  subtraction, transient hold, smoothing, reduction and mix. The profile is
+  saved in session state.
 - **De-Reverb** — late-tail spectral subtraction with tail length, pre-delay,
   transient protection, tilt and mix, sharing the denoise STFT.
+
+## Auto Analyze
+
+The OUT page has ANALYZE and APPLY. Analyze measures three seconds of raw input
+— hum frequency/level, noise floor, clipping, click density and a rough reverb
+tail — and APPLY sets conservative starts for the modules that are clearly
+needed.
+
+## Presets
+
+The header has a preset browser with the factory table (Vinyl, Dialogue,
+Podcast, Utility, Space and more), dirty-state indication and previous/next
+navigation. Presets are also exported as LV2 preset banks.
 
 ## Spectral editor
 
@@ -72,11 +88,10 @@ Installs to:
 
 ## Still to do
 
-- Preset browser UI (the preset table and LV2 preset export already exist).
 - Real-world listening/tuning pass on vinyl, dialogue, drums and clipped
   material.
-- More sophisticated Match (the current version repeats the last repair at
-  similar-band events).
+- More sophisticated Match (the current version uses a spectral-shape
+  similarity search and repeats the last repair).
 - ARA/standalone spectral editing, if the Linux host ecosystem makes it useful.
 
 Full research, design and roadmap: [`docs/RESEARCH_AND_PLAN.md`](docs/RESEARCH_AND_PLAN.md).
