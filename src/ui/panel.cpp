@@ -559,6 +559,7 @@ void Panel::tick(Shared& shared, PanelState& state) {
   state.noiseGrDb = shared.noiseGrDb.load(std::memory_order_relaxed);
   state.verbGrDb = shared.verbGrDb.load(std::memory_order_relaxed);
   state.captureSeconds = shared.captureSeconds.load(std::memory_order_relaxed);
+  state.captureArmed = shared.captureActive.load(std::memory_order_relaxed);
   state.transportSeconds = shared.transportSeconds.load(std::memory_order_relaxed);
   state.transportValid = shared.transportValid.load(std::memory_order_relaxed);
   state.editCount = shared.editCount.load(std::memory_order_relaxed);
@@ -1932,6 +1933,18 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
   // Title
   text(cr, state.diffMode ? "SPECTRAL DIFF" : "SPECTRAL REPAIR", kSpecX, 172,
        18, 0, kText.r, kText.g, kText.b);
+  if (state.captureArmed) {
+    const char* msg = "● ARMED — press play in the host, then FREEZE";
+    if (state.captureSeconds > 0.0f) {
+      msg = "● CAPTURING — press FREEZE when the event has passed";
+    } else if (!state.transportValid) {
+      msg = "● ARMED — host transport position is not available";
+    }
+    text(cr, msg, kSpecX + kSpecW, 172, 10, 2,
+         state.transportValid ? kGreen.r : kAmber.r,
+         state.transportValid ? kGreen.g : kAmber.g,
+         state.transportValid ? kGreen.b : kAmber.b);
+  }
 
   // Plot frame
   roundRect(cr, kSpecX, kSpecY, kSpecW, kSpecH, 6);
@@ -2442,8 +2455,10 @@ void Panel::drawWidget(cairo_t* cr, const Widget& w, const Shared& shared,
       break;
     case Kind::Button: {
       const bool active =
-          w.action >= 80 && w.action <= 86 &&
-          std::fabs(shared.get(P_AUDITION) - (w.action - 79)) < 0.5;
+          (w.action == 1 &&
+           shared.captureActive.load(std::memory_order_relaxed)) ||
+          (w.action >= 80 && w.action <= 86 &&
+           std::fabs(shared.get(P_AUDITION) - (w.action - 79)) < 0.5);
       roundRect(cr, w.x, w.y, w.w, w.h, 5);
       setRgb(cr, active ? kAccent : kPanelLight);
       cairo_fill(cr);
@@ -2451,7 +2466,11 @@ void Panel::drawWidget(cairo_t* cr, const Widget& w, const Shared& shared,
       cairo_set_line_width(cr, 1.0);
       roundRect(cr, w.x + 0.5, w.y + 0.5, w.w - 1, w.h - 1, 5);
       cairo_stroke(cr);
-      text(cr, w.label, w.x + w.w * 0.5, w.y + w.h * 0.5 + 4, 11, 1,
+      const char* label = w.label;
+      if (w.action == 1 && active) {
+        label = "ARMED";
+      }
+      text(cr, label, w.x + w.w * 0.5, w.y + w.h * 0.5 + 4, 11, 1,
            active ? 0.02 : kText.r, active ? 0.05 : kText.g,
            active ? 0.05 : kText.b);
       break;

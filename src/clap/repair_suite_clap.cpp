@@ -1012,9 +1012,18 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
 
   double hostTime = 0.0;
   bool hostTimeValid = false;
-  if (proc->transport &&
-      (proc->transport->flags & CLAP_TRANSPORT_HAS_SECONDS_TIMELINE)) {
+  if (proc->transport && (proc->transport->flags &
+                          CLAP_TRANSPORT_HAS_SECONDS_TIMELINE)) {
     hostTime = proc->transport->song_pos_seconds;
+    hostTimeValid = true;
+  } else if (proc->transport &&
+             (proc->transport->flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE) &&
+             std::isfinite(proc->transport->tempo) &&
+             proc->transport->tempo > 1.0) {
+    // Some hosts expose beats but not the seconds timeline.  Capture can
+    // still be anchored; tempo changes are the only approximation.
+    hostTime = proc->transport->song_pos_beats * 60.0 /
+               proc->transport->tempo;
     hostTimeValid = true;
   }
   s->engine.process(left, right, static_cast<int>(frames), s->meters, hostTime,

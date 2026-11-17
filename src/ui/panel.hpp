@@ -30,6 +30,7 @@ struct PanelState {
   float noiseGrDb = 0.0f;
   float verbGrDb = 0.0f;
   float captureSeconds = 0.0f;
+  bool captureArmed = false;
   double transportSeconds = 0.0;
   bool transportValid = false;
   int editCount = 0;
