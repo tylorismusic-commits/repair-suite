@@ -209,6 +209,13 @@ add_executable(repair_ttl_gen tools/gen_ttl.cpp)
 target_include_directories(repair_ttl_gen PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_compile_features(repair_ttl_gen PRIVATE cxx_std_17)
 
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+  add_test(NAME repair_ttl
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/check_ttl.py"
+            $<TARGET_FILE:repair_ttl_gen> "${CMAKE_SOURCE_DIR}")
+endif()
+
 target_compile_options(repair_engine_test PRIVATE -UNDEBUG)
 
 target_compile_options(repair_panel_test PRIVATE -UNDEBUG)
