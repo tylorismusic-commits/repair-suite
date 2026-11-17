@@ -21,6 +21,9 @@ Input → De-Clip → De-Click → De-Hum → De-Noise → De-Reverb
 ```
 
 All stages are always instantiated. Per-stage ON and MIX keep latency constant.
+Each page also has a live stage monitor: clip envelope/threshold, click events,
+hum harmonic series, noise reduction history, reverb-tail history, and
+input/output levels.
 Total latency is **4221 samples** (~87.9 ms at 48 kHz): 1535 for De-Clip, 639
 for De-Click and 2047 for the shared STFT. Hum, noise and reverb add no extra
 latency.

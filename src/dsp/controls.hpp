@@ -97,6 +97,9 @@ struct Meters {
   float analysisClipPct = 0.0f;
   float analysisClickRate = 0.0f;
   float analysisReverbSec = 0.0f;
+  float clipActivity = 0.0f;
+  int clickEvents = 0;
+  float humDetectedHz = 0.0f;
 };
 
 } // namespace repair

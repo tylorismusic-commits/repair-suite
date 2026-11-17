@@ -61,6 +61,11 @@ struct PanelState {
   int inHistoryHead = 0;
   float outHistory[kHistory] = {};
   int outHistoryHead = 0;
+  float clipHistory[kHistory] = {};
+  float clickHistory[kHistory] = {};
+  float noiseHistory[kHistory] = {};
+  float verbHistory[kHistory] = {};
+  int stageHead = 0;
 };
 
 class Panel {
@@ -125,6 +130,8 @@ private:
   void drawSpectralPage(cairo_t* cr, const Shared& shared,
                         const PanelState& state) const;
   void drawAnalysis(cairo_t* cr, const Shared& shared) const;
+  void drawStageVisual(cairo_t* cr, const Shared& shared,
+                       const PanelState& state, int page) const;
   void applyAnalysis(Shared& shared);
   void loadCapture(Shared& shared, PanelState& state);
   void buildSpectrogram(PanelState& state);

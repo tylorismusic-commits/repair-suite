@@ -183,6 +183,9 @@ public:
     meters.analysisClipPct = ar.clipPct;
     meters.analysisClickRate = ar.clickRate;
     meters.analysisReverbSec = ar.reverbSec;
+    meters.clipActivity = declip_.lastClipCount() > 0 ? 1.0f : 0.0f;
+    meters.clickEvents = declick_.lastClicks();
+    meters.humDetectedHz = dehum_.detectedHz();
   }
 
   SpectralCapture& capture() noexcept { return capture_; }

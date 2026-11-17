@@ -313,6 +313,12 @@ void run(LV2_Handle handle, uint32_t frames) {
                                     std::memory_order_relaxed);
   p->shared.analysisReverbSec.store(p->meters.analysisReverbSec,
                                     std::memory_order_relaxed);
+  p->shared.clipActivity.store(p->meters.clipActivity,
+                               std::memory_order_relaxed);
+  p->shared.clickEvents.store(p->meters.clickEvents,
+                              std::memory_order_relaxed);
+  p->shared.humDetectedHz.store(p->meters.humDetectedHz,
+                                std::memory_order_relaxed);
   if (p->compGr) *p->compGr = p->meters.grDb;
   if (p->sibGr) *p->sibGr = p->meters.noiseGrDb;
   if (p->harshGr) *p->harshGr = p->meters.verbGrDb;

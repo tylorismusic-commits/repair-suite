@@ -78,7 +78,7 @@ public:
   }
 
   int latencySamples() const noexcept { return 0; }
-  float detectedHz() const noexcept { return autoHz_; }
+  float detectedHz() const noexcept { return currentHz_; }
 
   void process(float* left, float* right, int frames) noexcept {
     if (!left || !right || frames <= 0) {

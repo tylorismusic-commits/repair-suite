@@ -983,6 +983,12 @@ clap_process_status pluginProcess(const clap_plugin_t* p, const clap_process_t* 
                                     std::memory_order_relaxed);
   s->shared.analysisReverbSec.store(s->meters.analysisReverbSec,
                                     std::memory_order_relaxed);
+  s->shared.clipActivity.store(s->meters.clipActivity,
+                               std::memory_order_relaxed);
+  s->shared.clickEvents.store(s->meters.clickEvents,
+                              std::memory_order_relaxed);
+  s->shared.humDetectedHz.store(s->meters.humDetectedHz,
+                                std::memory_order_relaxed);
   noteHostChanges(s);
   return CLAP_PROCESS_CONTINUE;
 }

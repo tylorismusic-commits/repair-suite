@@ -192,15 +192,15 @@ int main() {
         cairo_image_surface_create(CAIRO_FORMAT_ARGB32, kPanelWidth, kPanelHeight);
     cairo_t* pcr = cairo_create(psurf);
     presetPanel.draw(pcr, presetShared, presetState);
-    presetPanel.pointerDown(presetShared, presetState, 356 + 320 - 16, 37,
+    presetPanel.pointerDown(presetShared, presetState, 72 + 330 - 16, 32,
                             false);
     presetPanel.pointerUp(presetShared, presetState);
     assert(presetState.presetIndex == 0);
-    presetPanel.pointerDown(presetShared, presetState, 356 + 160, 37, false);
+    presetPanel.pointerDown(presetShared, presetState, 72 + 165, 32, false);
     presetPanel.pointerUp(presetShared, presetState);
     assert(presetState.presetOpen == 1);
     presetPanel.draw(pcr, presetShared, presetState);
-    presetPanel.pointerDown(presetShared, presetState, 356 + 160, 90, false);
+    presetPanel.pointerDown(presetShared, presetState, 72 + 165, 90, false);
     presetPanel.pointerUp(presetShared, presetState);
     assert(presetState.presetOpen == 0);
     cairo_destroy(pcr);

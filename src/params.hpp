@@ -288,6 +288,9 @@ public:
     analysisClipPct.store(0.0f, std::memory_order_relaxed);
     analysisClickRate.store(0.0f, std::memory_order_relaxed);
     analysisReverbSec.store(0.0f, std::memory_order_relaxed);
+    clipActivity.store(0.0f, std::memory_order_relaxed);
+    clickEvents.store(0, std::memory_order_relaxed);
+    humDetectedHz.store(0.0f, std::memory_order_relaxed);
     for (int i = 0; i < kProfileBins; ++i) {
       noiseProfile[i].store(0.0f);
     }
@@ -404,6 +407,9 @@ public:
   std::atomic<float> analysisClipPct;
   std::atomic<float> analysisClickRate;
   std::atomic<float> analysisReverbSec;
+  std::atomic<float> clipActivity;
+  std::atomic<int> clickEvents;
+  std::atomic<float> humDetectedHz;
   std::atomic<float> bpm;      // reserved for later tempo-synced capture
   std::atomic<bool> hostTempo;
 

@@ -73,6 +73,7 @@ public:
 
   int latencySamples() const noexcept { return kBlock + kContext - 1; }
   int clickCount() const noexcept { return totalClicks_; }
+  int lastClicks() const noexcept { return clicks_; }
 
   void process(float* left, float* right, int frames) noexcept {
     if (!left || !right || frames <= 0) {

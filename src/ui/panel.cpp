@@ -28,12 +28,12 @@ constexpr double kSpecX = 56.0;
 constexpr double kSpecY = 190.0;
 constexpr double kSpecW = 700.0;
 constexpr double kSpecH = 360.0;
-constexpr double kPresetX = 356.0;
-constexpr double kPresetY = 22.0;
-constexpr double kPresetW = 320.0;
-constexpr double kPresetH = 30.0;
+constexpr double kPresetX = 72.0;
+constexpr double kPresetY = 14.0;
+constexpr double kPresetW = 330.0;
+constexpr double kPresetH = 36.0;
 constexpr double kListY = 56.0;
-constexpr double kListRow = 20.0;
+constexpr double kListRow = 22.0;
 
 struct Rgb {
   double r, g, b;
@@ -261,9 +261,9 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
     Widget p{};
     p.kind = Kind::Power;
     p.param = P_POWER;
-    p.x = 44;
-    p.y = 36;
-    p.r = 16;
+    p.x = 34;
+    p.y = 30;
+    p.r = 14;
     widgets_.push_back(p);
   }
   const double tabW = (kPanelWidth - 80.0 - 6 * 8.0) / 7.0;
@@ -272,15 +272,14 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
     t.kind = Kind::PageTab;
     t.value = i;
     t.x = 40 + i * (tabW + 8.0);
-    t.y = 78;
+    t.y = 70;
     t.w = tabW;
-    t.h = 46;
+    t.h = 40;
     t.label = kPageNames[i];
     widgets_.push_back(t);
   }
 
   const double y1 = 300;
-  const double y2 = 510;
   const double x0 = 210;
   const double step = 160;
   switch (state.tab) {
@@ -330,7 +329,7 @@ void Panel::layout(const Shared& shared, const PanelState& state) {
       addKnob(P_VERB_PREDELAY, x0 + 2 * step, y1, 56);
       addKnob(P_VERB_TRANSIENT, x0 + 3 * step, y1, 56);
       addKnob(P_VERB_TILT, x0 + 4 * step, y1, 56);
-      addKnob(P_VERB_MIX, x0 + 2 * step, y2, 56);
+      addKnob(P_VERB_MIX, x0 + 5 * step, y1, 56);
       break;
     case 5:  // SPECTRAL
       addToggle(P_SPEC_ON, 790, 170, 140, 40, "ON");
@@ -411,6 +410,15 @@ void Panel::tick(Shared& shared, PanelState& state) {
   state.inHistoryHead = (state.inHistoryHead + 1) % PanelState::kHistory;
   state.outHistory[state.outHistoryHead] = state.outLevelL;
   state.outHistoryHead = (state.outHistoryHead + 1) % PanelState::kHistory;
+  state.clipHistory[state.stageHead] =
+      shared.clipActivity.load(std::memory_order_relaxed);
+  state.clickHistory[state.stageHead] =
+      static_cast<float>(shared.clickEvents.load(std::memory_order_relaxed));
+  state.noiseHistory[state.stageHead] =
+      shared.noiseGrDb.load(std::memory_order_relaxed);
+  state.verbHistory[state.stageHead] =
+      shared.verbGrDb.load(std::memory_order_relaxed);
+  state.stageHead = (state.stageHead + 1) % PanelState::kHistory;
   loadCapture(shared, state);
 }
 
@@ -1238,6 +1246,164 @@ void Panel::updateSelectionBoundsFromMask(PanelState& state) {
 }
 
 
+
+void Panel::drawStageVisual(cairo_t* cr, const Shared& shared,
+                            const PanelState& state, int page) const {
+  const double x = 56.0;
+  const double y = page == 6 ? 470.0 : 420.0;
+  const double w = kPanelWidth - 112.0;
+  const double h = page == 6 ? 140.0 : 190.0;
+  roundRect(cr, x, y, w, h, 6);
+  setRgb(cr, Rgb{0.035, 0.055, 0.060});
+  cairo_fill(cr);
+  setRgb(cr, kEdge, 0.8);
+  cairo_set_line_width(cr, 1.0);
+  roundRect(cr, x + 0.5, y + 0.5, w - 1, h - 1, 6);
+  cairo_stroke(cr);
+
+  const int head = state.stageHead;
+  const int latest = (head + PanelState::kHistory - 1) % PanelState::kHistory;
+  auto at = [&](const float* hist, int i) {
+    return hist[(head + i) % PanelState::kHistory];
+  };
+  auto drawHistory = [&](const float* hist, double lo, double hi, Rgb color,
+                         bool filled) {
+    cairo_new_path(cr);
+    for (int i = 0; i < PanelState::kHistory; ++i) {
+      const double px = x + 12 + (w - 24) * i / (PanelState::kHistory - 1);
+      const double t = std::clamp((at(hist, i) - lo) / (hi - lo), 0.0, 1.0);
+      const double py = y + h - 18 - t * (h - 48);
+      if (i == 0) {
+        cairo_move_to(cr, px, py);
+      } else {
+        cairo_line_to(cr, px, py);
+      }
+    }
+    if (filled) {
+      cairo_line_to(cr, x + w - 12, y + h - 18);
+      cairo_line_to(cr, x + 12, y + h - 18);
+      cairo_close_path(cr);
+      setRgb(cr, color, 0.18);
+      cairo_fill_preserve(cr);
+    }
+    setRgb(cr, color, 0.85);
+    cairo_set_line_width(cr, 1.2);
+    cairo_stroke(cr);
+  };
+
+  char label[180];
+  if (page == 0) {
+    text(cr, "INPUT ENVELOPE / CLIP THRESHOLD", x + 14, y + 18, 10, 0,
+         kDim.r, kDim.g, kDim.b);
+    // Envelope from input peak history.
+    cairo_new_path(cr);
+    for (int i = 0; i < PanelState::kHistory; ++i) {
+      const double px = x + 12 + (w - 24) * i / (PanelState::kHistory - 1);
+      const double t = std::clamp((at(state.inHistory, i) + 60.0) / 60.0, 0.0, 1.0);
+      const double py = y + h - 18 - t * (h - 48);
+      if (i == 0) {
+        cairo_move_to(cr, px, py);
+      } else {
+        cairo_line_to(cr, px, py);
+      }
+    }
+    setRgb(cr, kAccent, 0.75);
+    cairo_set_line_width(cr, 1.3);
+    cairo_stroke(cr);
+    const double thrDb = shared.get(P_CLIP_UPPER);
+    const double ty = y + h - 18 -
+                      std::clamp((thrDb + 60.0) / 60.0, 0.0, 1.0) * (h - 48);
+    setRgb(cr, kAmber, 0.7);
+    cairo_set_line_width(cr, 1.0);
+    cairo_move_to(cr, x + 12, ty);
+    cairo_line_to(cr, x + w - 12, ty);
+    cairo_stroke(cr);
+    const double activity = state.clipHistory[latest];
+    std::snprintf(label, sizeof(label), "CLIP ACTIVITY %s",
+                  activity > 0.5f ? "DETECTED" : "CLEAR");
+    text(cr, label, x + 14, y + h - 6, 10, 0,
+         activity > 0.5f ? kAmber.r : kDim.r,
+         activity > 0.5f ? kAmber.g : kDim.g,
+         activity > 0.5f ? kAmber.b : kDim.b);
+  } else if (page == 1) {
+    text(cr, "CLICK EVENTS / 240 BLOCKS", x + 14, y + 18, 10, 0,
+         kDim.r, kDim.g, kDim.b);
+    setRgb(cr, kAccent, 0.75);
+    for (int i = 0; i < PanelState::kHistory; ++i) {
+      const double px = x + 12 + (w - 24) * i / (PanelState::kHistory - 1);
+      const double t = std::clamp(at(state.clickHistory, i) / 12.0, 0.0, 1.0);
+      const double py = y + h - 18 - t * (h - 48);
+      cairo_move_to(cr, px, y + h - 18);
+      cairo_line_to(cr, px, py);
+      cairo_stroke(cr);
+    }
+    std::snprintf(label, sizeof(label), "latest %d event%s", (int)state.clickHistory[latest], state.clickHistory[latest] == 1 ? "" : "s");
+    text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
+  } else if (page == 2) {
+    text(cr, "HUM HARMONIC SERIES", x + 14, y + 18, 10, 0,
+         kDim.r, kDim.g, kDim.b);
+    float hz = shared.humDetectedHz.load(std::memory_order_relaxed);
+    if (hz <= 0.0f) {
+      hz = static_cast<float>(shared.get(P_HUM_FREQ));
+    }
+    const int harmonics = std::clamp(
+        static_cast<int>(shared.get(P_HUM_HARMONICS) + 0.5), 1, 24);
+    for (int k = 1; k <= harmonics; ++k) {
+      const double f = hz * k;
+      if (f > 1000.0) {
+        break;
+      }
+      const double px = x + 20 + (w - 40) * (std::log(f / 20.0) / std::log(50.0));
+      const double py0 = y + 40;
+      const double py1 = y + h - 30;
+      setRgb(cr, kAccent, k == 1 ? 0.95 : 0.45);
+      cairo_set_line_width(cr, k == 1 ? 2.0 : 1.0);
+      cairo_move_to(cr, px, py0);
+      cairo_line_to(cr, px, py1);
+      cairo_stroke(cr);
+    }
+    std::snprintf(label, sizeof(label), "%.1f Hz   %d harmonics   %.0f dB deep",
+                  hz, harmonics, shared.get(P_HUM_DEPTH));
+    text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
+  } else if (page == 3) {
+    text(cr, "NOISE REDUCTION", x + 14, y + 18, 10, 0,
+         kDim.r, kDim.g, kDim.b);
+    drawHistory(state.noiseHistory, 0.0, 30.0, kAccent, true);
+    std::snprintf(label, sizeof(label), "%.1f dB   profile %s",
+                  state.noiseHistory[latest],
+                  shared.profileValid.load(std::memory_order_relaxed)
+                      ? "ready"
+                      : "not learned");
+    text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
+  } else if (page == 4) {
+    text(cr, "REVERB TAIL REDUCTION", x + 14, y + 18, 10, 0,
+         kDim.r, kDim.g, kDim.b);
+    drawHistory(state.verbHistory, 0.0, 20.0, kAccent, true);
+    std::snprintf(label, sizeof(label), "%.1f dB   tail %.2f s   pre %.0f ms",
+                  state.verbHistory[latest],
+                  shared.get(P_VERB_TAIL), shared.get(P_VERB_PREDELAY));
+    text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
+  } else {
+    text(cr, "INPUT / OUTPUT", x + 14, y + 18, 10, 0,
+         kDim.r, kDim.g, kDim.b);
+    auto levelBar = [&](const char* name, float db, double py) {
+      const double t = std::clamp((db + 60.0) / 60.0, 0.0, 1.0);
+      setRgb(cr, Rgb{0.06, 0.09, 0.10});
+      cairo_rectangle(cr, x + 90, py, w - 140, 12);
+      cairo_fill(cr);
+      setRgb(cr, kAccent, 0.8);
+      cairo_rectangle(cr, x + 90, py, (w - 140) * t, 12);
+      cairo_fill(cr);
+      text(cr, name, x + 14, py + 11, 10, 0, kDim.r, kDim.g, kDim.b);
+    };
+    levelBar("IN", state.inLevelL, y + 50);
+    levelBar("OUT", state.outLevelL, y + 82);
+    std::snprintf(label, sizeof(label), "peak in %.1f dB   peak out %.1f dB",
+                  state.inLevelL, state.outLevelL);
+    text(cr, label, x + 14, y + h - 6, 10, 0, kDim.r, kDim.g, kDim.b);
+  }
+}
+
 void Panel::drawAnalysis(cairo_t* cr, const Shared& shared) const {
   const bool ready = shared.analysisReady.load(std::memory_order_relaxed);
   const float progress =
@@ -1496,19 +1662,22 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
   cairo_pattern_destroy(bg);
 
   // Faceplate
-  roundRect(cr, 20, 20, kPanelWidth - 40, kPanelHeight - 40, 12);
+  roundRect(cr, 20, 62, kPanelWidth - 40, kPanelHeight - 82, 12);
   setRgb(cr, kPanel);
   cairo_fill(cr);
   cairo_set_line_width(cr, 1.0);
   setRgb(cr, kEdge, 0.8);
-  roundRect(cr, 20.5, 20.5, kPanelWidth - 41, kPanelHeight - 41, 12);
+  roundRect(cr, 20.5, 62.5, kPanelWidth - 41, kPanelHeight - 83, 12);
   cairo_stroke(cr);
 
   drawHeader(cr, shared, state);
   if (state.tab == 5) {
     drawSpectralPage(cr, shared, state);
-  } else if (state.tab == 6) {
-    drawAnalysis(cr, shared);
+  } else {
+    drawStageVisual(cr, shared, state, state.tab);
+    if (state.tab == 6) {
+      drawAnalysis(cr, shared);
+    }
   }
 
   for (const Widget& w : widgets_) {
@@ -1557,8 +1726,8 @@ void Panel::drawPresetBar(cairo_t* cr, const Shared& shared,
   cairo_set_line_width(cr, 1.0);
   roundRect(cr, kPresetX + 0.5, kPresetY + 0.5, kPresetW - 1, kPresetH - 1, 5);
   cairo_stroke(cr);
-  text(cr, "‹", kPresetX + 16, kPresetY + 21, 19, 1, kDim.r, kDim.g, kDim.b);
-  text(cr, "›", kPresetX + kPresetW - 16, kPresetY + 21, 19, 1, kDim.r, kDim.g,
+  text(cr, "‹", kPresetX + 18, kPresetY + 25, 20, 1, kDim.r, kDim.g, kDim.b);
+  text(cr, "›", kPresetX + kPresetW - 18, kPresetY + 25, 20, 1, kDim.r, kDim.g,
        kDim.b);
   const auto& presets = factoryPresets();
   std::string label = "Init";
@@ -1569,7 +1738,7 @@ void Panel::drawPresetBar(cairo_t* cr, const Shared& shared,
   if (state.presetDirty) {
     label += " *";
   }
-  text(cr, label.c_str(), kPresetX + kPresetW * 0.5, kPresetY + 20, 12, 1,
+  text(cr, label.c_str(), kPresetX + kPresetW * 0.5, kPresetY + 24, 14, 1,
        kText.r, kText.g, kText.b);
 }
 
@@ -1610,13 +1779,26 @@ void Panel::drawPresetList(cairo_t* cr, const Shared& shared,
 
 void Panel::drawHeader(cairo_t* cr, const Shared& shared,
                        const PanelState& state) const {
-  (void)shared;
-  (void)state;
-  text(cr, "REPAIR SUITE", 90, 50, 26, 0, kText.r, kText.g, kText.b);
-  text(cr, "restoration strip", 92, 68, 11, 0, kDim.r, kDim.g, kDim.b);
+  cairo_pattern_t* bar = cairo_pattern_create_linear(0, 0, 0, 62);
+  cairo_pattern_add_color_stop_rgb(bar, 0.0, kPanel.r * 1.35,
+                                   kPanel.g * 1.35, kPanel.b * 1.35);
+  cairo_pattern_add_color_stop_rgb(bar, 1.0, kPanel.r * 0.72,
+                                   kPanel.g * 0.72, kPanel.b * 0.72);
+  cairo_rectangle(cr, 0, 0, kPanelWidth, 62);
+  cairo_set_source(cr, bar);
+  cairo_fill(cr);
+  cairo_pattern_destroy(bar);
+  cairo_set_source_rgba(cr, 1.0, 1.0, 1.0, 0.08);
+  cairo_set_line_width(cr, 1.0);
+  cairo_move_to(cr, 0, 0.5);
+  cairo_line_to(cr, kPanelWidth, 0.5);
+  cairo_stroke(cr);
+  cairo_set_source_rgba(cr, 0.0, 0.0, 0.0, 0.55);
+  cairo_move_to(cr, 0, 61.5);
+  cairo_line_to(cr, kPanelWidth, 61.5);
+  cairo_stroke(cr);
+  text(cr, "REPAIR SUITE", kPanelWidth * 0.5, 38, 19, 1, 0.80, 0.82, 0.84);
   drawPresetBar(cr, shared, state);
-  text(cr, "CLIP → CLICK → HUM → NOISE → VERB → SPEC → OUT", 1160, 45, 11, 2,
-       kDim.r, kDim.g, kDim.b);
 }
 
 void Panel::drawWidget(cairo_t* cr, const Widget& w, const Shared& shared,
@@ -1625,12 +1807,17 @@ void Panel::drawWidget(cairo_t* cr, const Widget& w, const Shared& shared,
     case Kind::Power: {
       const bool on = shared.get(P_POWER) > 0.5;
       cairo_arc(cr, w.x, w.y, w.r, 0, 2 * kPiD);
-      setRgb(cr, on ? kAccent : Rgb{0.25, 0.29, 0.30});
+      setRgb(cr, Rgb{0.12, 0.12, 0.12});
       cairo_fill(cr);
-      cairo_set_line_width(cr, 2.0);
-      setRgb(cr, kEdge);
-      cairo_arc(cr, w.x, w.y, w.r - 4, -kPiD / 2 + 0.5,
-                -kPiD / 2 + 2 * kPiD - 0.5);
+      cairo_arc(cr, w.x, w.y, w.r - 1.5, 0, 2 * kPiD);
+      setRgb(cr, on ? kGreen : Rgb{0.42, 0.42, 0.42});
+      cairo_set_line_width(cr, 2.2);
+      cairo_new_path(cr);
+      cairo_arc(cr, w.x, w.y, 7, -kPiD / 2 + 0.6,
+                -kPiD / 2 + 2 * kPiD - 0.6);
+      cairo_stroke(cr);
+      cairo_move_to(cr, w.x, w.y - 9);
+      cairo_line_to(cr, w.x, w.y - 1);
       cairo_stroke(cr);
       break;
     }
