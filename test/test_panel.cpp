@@ -70,6 +70,61 @@ int main() {
   panel.pointerDown(shared, state, 865, 249, false);
   assert(!shared.captureActive.load());
 
+
+  {
+    // Spectral page: freeze a capture, select a box, apply an erase edit.
+    Shared spectralShared;
+    SpectralCapture capture;
+    capture.prepare(48000.0f, 1.0f);
+    capture.setArmed(true);
+    std::vector<float> l(48000), r(48000);
+    for (int i = 0; i < 48000; ++i) {
+      l[static_cast<size_t>(i)] = r[static_cast<size_t>(i)] =
+          0.2f * std::sin(2.0 * 3.141592653589793 * 1000.0 * i / 48000.0);
+    }
+    capture.push(l.data(), r.data(), 48000, 0.0, true);
+    capture.requestFreeze();
+    std::vector<float> zeros(512, 0.0f);
+    capture.push(zeros.data(), zeros.data(), 512, 1.0, true);
+    assert(capture.frozenReady());
+    spectralShared.spectralBridge.store(&capture);
+    spectralShared.sampleRate.store(48000.0f);
+
+    Panel spectralPanel;
+    spectralPanel.loadFont("./assets/fonts");
+    PanelState spectralState;
+    spectralState.tab = 5;
+    cairo_surface_t* ss =
+        cairo_image_surface_create(CAIRO_FORMAT_ARGB32, kPanelWidth, kPanelHeight);
+    cairo_t* sctx = cairo_create(ss);
+    spectralPanel.draw(sctx, spectralShared, spectralState);
+    spectralPanel.tick(spectralShared, spectralState);
+    spectralPanel.draw(sctx, spectralShared, spectralState);
+    assert(spectralState.specValid);
+    assert(spectralState.specW > 0 && spectralState.specH > 0);
+
+    spectralPanel.pointerDown(spectralShared, spectralState, 100, 300, false);
+    spectralPanel.pointerMove(spectralShared, spectralState, 250, 420, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(spectralState.hasSelection);
+
+    spectralShared.set(P_SPEC_OP, 1.0);  // Erase
+    spectralShared.set(P_SPEC_MIX, 100.0);
+    spectralPanel.pointerDown(spectralShared, spectralState, 865, 303, false);
+    spectralPanel.pointerUp(spectralShared, spectralState);
+    assert(capture.editCount() == 1);
+    const auto& edit = capture.edits().front();
+    double energy = 0.0;
+    for (float v : edit.left) {
+      energy += static_cast<double>(v) * v;
+    }
+    const double editRms =
+        std::sqrt(energy / std::max<size_t>(1, edit.left.size()));
+    assert(editRms < 0.02);
+    cairo_destroy(sctx);
+    cairo_surface_destroy(ss);
+  }
+
   std::printf("panel tests passed\n");
   return 0;
 }
