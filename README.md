@@ -90,6 +90,22 @@ Installs to:
 - `~/.clap/RepairSuite.clap` + `RepairSuite.resources/`
 - `~/.lv2/repair-suite.lv2/`
 
+## Offline ML source separation
+
+The real-time plug-in deliberately does not embed a Demucs-class model.  The
+companion `repair-separate` tool separates a WAV offline into vocals, drums,
+bass and other stems, using Demucs or a user-supplied time-domain ONNX model.
+Bring the stems back into the DAW for repair or remixing.
+
+```sh
+python3 -m pip install --user demucs
+repair-separate song.wav ~/stems
+repair-separate interview.wav ~/stems --two-stems vocals
+```
+
+See [`docs/SEPARATION.md`](docs/SEPARATION.md) for ONNX, model order, licensing
+and workflow.
+
 ## Still to do
 
 - Real-world listening/tuning pass on vinyl, dialogue, drums and clipped

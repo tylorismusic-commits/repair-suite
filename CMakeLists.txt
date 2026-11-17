@@ -214,7 +214,13 @@ if(Python3_FOUND)
   add_test(NAME repair_ttl
     COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/check_ttl.py"
             $<TARGET_FILE:repair_ttl_gen> "${CMAKE_SOURCE_DIR}")
+  add_test(NAME repair_separate_help
+    COMMAND ${Python3_EXECUTABLE} "${CMAKE_SOURCE_DIR}/tools/repair_separate.py"
+            --help)
 endif()
+
+install(PROGRAMS tools/repair_separate.py DESTINATION bin
+        RENAME repair-separate)
 
 target_compile_options(repair_engine_test PRIVATE -UNDEBUG)
 
