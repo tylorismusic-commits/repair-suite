@@ -580,7 +580,8 @@ bool Panel::applySpectralEdit(Shared& shared, PanelState& state) {
 
 void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
                              const PanelState& state) const {
-  (void)shared;
+  const bool bridgeAvailable =
+      shared.spectralBridge.load(std::memory_order_relaxed) != nullptr;
   // Title
   text(cr, "SPECTRAL REPAIR", kSpecX, 172, 18, 0, kText.r, kText.g, kText.b);
 
@@ -600,6 +601,10 @@ void Panel::drawSpectralPage(cairo_t* cr, const Shared& shared,
     cairo_paint(cr);
     cairo_restore(cr);
     cairo_surface_destroy(image);
+  } else if (!bridgeAvailable) {
+    text(cr, "Spectral capture needs host instance-access",
+         kSpecX + kSpecW * 0.5, kSpecY + kSpecH * 0.5, 14, 1, kAmber.r,
+         kAmber.g, kAmber.b);
   } else {
     text(cr, "Capture a section, then Freeze",
          kSpecX + kSpecW * 0.5, kSpecY + kSpecH * 0.5, 15, 1, kDim.r, kDim.g,
