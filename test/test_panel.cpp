@@ -4,15 +4,26 @@
 
 #include <cassert>
 #include <cmath>
-#include <vector>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <string>
+#include <vector>
 
 #include "dsp/spectral_capture.hpp"
 #include "presets.hpp"
 #include "ui/panel.hpp"
+#include "user_presets.hpp"
 
 int main() {
   using namespace repair;
+  const std::filesystem::path config =
+      "/tmp/opencode/repair-suite-test-config";
+  std::filesystem::remove_all(config);
+  std::filesystem::create_directories(config / "home");
+  setenv("XDG_CONFIG_HOME", config.string().c_str(), 1);
+  setenv("HOME", (config / "home").string().c_str(), 1);
+
   Panel panel;
   panel.loadFont("./assets/fonts");
   Shared shared;
@@ -204,6 +215,7 @@ int main() {
     presetPanel.pointerDown(presetShared, presetState, 72 + 165, 32, false);
     presetPanel.pointerUp(presetShared, presetState);
     assert(presetState.presetOpen == 1);
+    presetState.presetScroll = 0;
     presetPanel.draw(pcr, presetShared, presetState);
     presetPanel.pointerDown(presetShared, presetState, 72 + 165, 90, false);
     presetPanel.pointerUp(presetShared, presetState);
@@ -375,6 +387,117 @@ int main() {
     assert(ss.historyOpen);
     cairo_destroy(hc);
     cairo_surface_destroy(hs);
+  }
+
+  // User presets: save, duplicate, recall, dirty tracking, conflict,
+  // rename, export, import, rescan and delete.
+  {
+    auto indexOf = [&](const char* name) {
+      for (int i = 0; i < panel.presetCount(); ++i) {
+        if (std::string(panel.presetName(i)) == name) return i;
+      }
+      return -1;
+    };
+    shared.set(P_INPUT, 6.0);
+    state.presetOpen = 0;
+    panel.pointerDown(shared, state, 200, 32, false);
+    panel.pointerUp(shared, state);
+    panel.pointerDown(shared, state, 117, 373, false);  // SAVE
+    panel.pointerUp(shared, state);
+    assert(state.savePreset);
+    for (const char* c = "Test Repair"; *c; ++c) {
+      char buf[2] = {*c, 0};
+      panel.keyEvent(shared, state, 0, buf);
+    }
+    panel.keyEvent(shared, state, 13, nullptr);
+    assert(panel.presetCount() == static_cast<int>(factoryPresets().size()) + 1);
+    assert(std::string(panel.presetName(
+               static_cast<int>(factoryPresets().size()))) == "Test Repair");
+    assert(std::filesystem::exists(userPresetDir() /
+                                   "Test Repair.repair-suite"));
+
+    // Duplicate and delete.
+    panel.pointerDown(shared, state, 200, 32, false);
+    panel.pointerUp(shared, state);
+    panel.pointerDown(shared, state, 208, 373, false);
+    panel.pointerUp(shared, state);
+    assert(indexOf("Test Repair copy") >= 0);
+    panel.pointerDown(shared, state, 200, 32, false);
+    panel.pointerUp(shared, state);
+    panel.pointerDown(shared, state, 198, 403, false);
+    panel.pointerUp(shared, state);
+    assert(state.deletePresetConfirm);
+    panel.pointerDown(shared, state, 198, 403, false);
+    panel.pointerUp(shared, state);
+    assert(indexOf("Test Repair copy") < 0);
+
+    // Recall and dirty tracking.
+    panel.applyPreset(shared, state, indexOf("Test Repair"));
+    assert(std::fabs(shared.get(P_INPUT) - 6.0) < 1e-6);
+    shared.set(P_INPUT, 1.0);
+    panel.tick(shared, state);
+    assert(state.presetDirty);
+    shared.set(P_INPUT, 6.0);
+    panel.tick(shared, state);
+    assert(!state.presetDirty);
+
+    // Save another, reject a rename conflict, then rename.
+    shared.set(P_INPUT, 2.0);
+    panel.pointerDown(shared, state, 200, 32, false);
+    panel.pointerUp(shared, state);
+    panel.pointerDown(shared, state, 117, 373, false);
+    panel.pointerUp(shared, state);
+    for (const char* c = "Other Repair"; *c; ++c) {
+      char buf[2] = {*c, 0};
+      panel.keyEvent(shared, state, 0, buf);
+    }
+    panel.keyEvent(shared, state, 13, nullptr);
+    const int other = indexOf("Other Repair");
+    assert(other >= 0);
+    panel.applyPreset(shared, state, other);
+    panel.pointerDown(shared, state, 200, 32, false);
+    panel.pointerUp(shared, state);
+    panel.pointerDown(shared, state, 118, 403, false);
+    panel.pointerUp(shared, state);
+    assert(state.renamePreset);
+    for (const char* c = "Test Repair"; *c; ++c) {
+      char buf[2] = {*c, 0};
+      panel.keyEvent(shared, state, 0, buf);
+    }
+    panel.keyEvent(shared, state, 13, nullptr);
+    assert(!state.presetError.empty() && indexOf("Other Repair") >= 0);
+    state.presetText = "Renamed Repair";
+    panel.keyEvent(shared, state, 13, nullptr);
+    assert(indexOf("Renamed Repair") >= 0 && indexOf("Other Repair") < 0);
+
+    // Export.
+    panel.pointerDown(shared, state, 200, 32, false);
+    panel.pointerUp(shared, state);
+    panel.pointerDown(shared, state, 286, 403, false);
+    panel.pointerUp(shared, state);
+    assert(std::filesystem::exists(userPresetExportDir() /
+                                   "Renamed Repair.repair-suite"));
+
+    // Import with a collision suffix.
+    const std::filesystem::path external = config / "external";
+    std::filesystem::create_directories(external);
+    std::vector<double> imported;
+    for (uint32_t i = 0; i < P_COUNT; ++i) imported.push_back(shared.get(i));
+    imported[P_INPUT] = 9.0;
+    assert(writeUserPreset(external, "Test Repair", imported));
+    assert(panel.importDroppedFile(
+        shared, state, (external / "Test Repair.repair-suite").string()));
+    assert(indexOf("Test Repair (2)") >= 0);
+    assert(std::fabs(shared.get(P_INPUT) - 9.0) < 1e-6);
+
+    // Rescan on open.
+    const int before = panel.presetCount();
+    saveUserPreset(userPresetDir(), "External Repair", shared);
+    state.presetOpen = 0;
+    panel.pointerDown(shared, state, 200, 32, false);
+    panel.pointerUp(shared, state);
+    assert(panel.presetCount() == before + 1);
+    assert(indexOf("External Repair") >= 0);
   }
 
   std::printf("panel tests passed\n");

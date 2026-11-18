@@ -56,7 +56,10 @@ needed.
 The header has a preset browser with 28 factory presets across Vinyl,
 Dialogue, Podcast, Drums, Bass, Guitars, Mix Bus, Space, Archive, Stems and
 Utility, with dirty-state indication, scrolling and previous/next navigation.
-Presets are also exported as LV2 preset banks.
+SAVE stores your own presets under `~/.config/RepairSuite/presets`; they can be
+duplicated, renamed, deleted, exported to `~/Documents/Repair Suite Presets`
+and imported by dropping a `.repair-suite` file on the panel. Factory presets
+are also exported as LV2 preset banks.
 
 ## Spectral editor
 

@@ -9,6 +9,7 @@
 
 #include "params.hpp"
 #include "dsp/spectral_bridge.hpp"
+#include "user_presets.hpp"
 
 namespace repair {
 
@@ -22,6 +23,17 @@ struct PanelState {
   bool presetDirty = false;
   int presetOpen = 0;
   int presetScroll = 0;
+  bool savePreset = false;
+  bool renamePreset = false;
+  bool deletePresetConfirm = false;
+  std::string presetText;
+  bool presetTextFresh = false;
+  std::string presetError;
+  bool presetOverwriteConfirm = false;
+  std::string presetNotice;
+  double presetNoticeUntil = 0.0;
+  std::vector<double> presetSnapshot;
+  int presetScanTicks = 60;
   float inLevelL = -120.0f;
   float inLevelR = -120.0f;
   float outLevelL = -120.0f;
@@ -104,11 +116,29 @@ public:
   bool dragging() const { return dragParam_ >= 0; }
 
   void applyPreset(Shared& shared, PanelState& state, int index) const;
+  int presetCount() const;
+  const char* presetName(int index) const;
+  const char* presetCategory(int index) const;
+  std::vector<int> presetOrder() const;
+  int presetRow(int index) const;
+  int presetTotalRows() const;
+  double presetResetValue(const PanelState& state, uint32_t param) const;
+  void reloadUserPresets();
+  void rescanUserPresets(PanelState& state);
+  void setPresetNotice(PanelState& state, const std::string& text) const;
+  bool commitPresetName(Shared& shared, PanelState& state);
+  void duplicatePreset(Shared& shared, PanelState& state);
+  void exportPreset(const Shared& shared, PanelState& state) const;
+  bool importPresetFile(Shared& shared, PanelState& state,
+                        const std::string& path);
   bool handlePresetClick(Shared& shared, PanelState& state, double x, double y);
   void drawPresetBar(cairo_t* cr, const Shared& shared,
                      const PanelState& state) const;
   void drawPresetList(cairo_t* cr, const Shared& shared,
                       const PanelState& state) const;
+
+  bool importDroppedFile(Shared& shared, PanelState& state,
+                         const std::string& path);
 
 private:
   enum class Kind { Knob, Toggle, Choice, PageTab, Power, Button };
@@ -197,6 +227,7 @@ private:
                  int action);
 
   std::vector<Widget> widgets_;
+  std::vector<UserPreset> userPresets_;
   int dragParam_ = -1;
   double dragStartY_ = 0.0;
   double dragStartValue_ = 0.0;
