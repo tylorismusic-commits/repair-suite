@@ -44,6 +44,11 @@ public:
   virtual void clearPreview() = 0;
   virtual bool previewActive() const = 0;
   virtual float capturedSeconds() const = 0;
+  // Live (unfrozen) capture, for showing the input while the user is still
+  // looking for the moment they want to freeze.
+  virtual int copyCaptured(std::vector<float>* left,
+                           std::vector<float>* right) const = 0;
+  virtual double captureStartTime() const = 0;
 };
 
 } // namespace repair

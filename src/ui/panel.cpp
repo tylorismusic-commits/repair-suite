@@ -698,11 +698,34 @@ bool Panel::plotHit(double x, double y) const {
 
 void Panel::loadCapture(Shared& shared, PanelState& state) {
   auto* bridge = shared.spectralBridge.load(std::memory_order_relaxed);
-  if (!bridge || !bridge->frozenReady()) {
+  if (!bridge) {
     if (captureLoaded_) {
       captureLoaded_ = false;
       state.specValid = false;
       state.hasSelection = false;
+    }
+    return;
+  }
+  if (!bridge->frozenReady()) {
+    // While the capture is armed, show the rolling input so the user can see
+    // where the vocal/event is before pressing FREEZE.  Refresh at roughly
+    // 5 Hz to keep this cheap.
+    const bool armed = shared.captureActive.load(std::memory_order_relaxed);
+    if (armed && bridge->capturedSeconds() > 0.15f) {
+      if (++liveCaptureTick_ >= 6) {
+        liveCaptureTick_ = 0;
+        if (bridge->copyCaptured(&captureL_, &captureR_)) {
+          captureLoaded_ = false;
+          state.specZoom = 1.0;
+          state.specScroll = 0.0;
+          state.hasSelection = false;
+          diffValid_ = false;
+          buildSpectrogram(state);
+          state.specStartTime = bridge->captureStartTime();
+        }
+      }
+    } else if (captureLoaded_ || state.specValid) {
+      liveCaptureTick_ = 0;
     }
     return;
   }
@@ -1812,6 +1835,15 @@ void Panel::drawAnalysis(cairo_t* cr, const Shared& shared,
       shared.analysisClickRate.load(std::memory_order_relaxed);
   const float reverb = shared.analysisReverbSec.load(std::memory_order_relaxed);
   char line[220];
+  if (ready || progress > 0.0f) {
+    roundRect(cr, 120, 206, 680, 238, 8);
+    setRgb(cr, Rgb{0.018, 0.028, 0.034});
+    cairo_fill(cr);
+    setRgb(cr, kAccent, 0.7);
+    cairo_set_line_width(cr, 1.0);
+    roundRect(cr, 120.5, 206.5, 679, 237, 8);
+    cairo_stroke(cr);
+  }
   if (progress > 0.0f && !ready) {
     std::snprintf(line, sizeof(line), "ANALYZING  %.0f%%",
                   std::clamp(progress, 0.0f, 1.0f) * 100.0f);
@@ -1820,14 +1852,14 @@ void Panel::drawAnalysis(cairo_t* cr, const Shared& shared,
   } else {
     std::snprintf(line, sizeof(line), "REVIEW SUGGESTIONS  ·  APPLY CHECKED");
   }
-  text(cr, line, 140, 214, 13, 0, ready ? kText.r : kDim.r,
+  text(cr, line, 140, 226, 13, 0, ready ? kText.r : kDim.r,
        ready ? kText.g : kDim.g, ready ? kText.b : kDim.b);
   if (progress > 0.0f && !ready) {
     setRgb(cr, Rgb{0.06, 0.09, 0.10});
-    cairo_rectangle(cr, 140, 224, 600, 6);
+    cairo_rectangle(cr, 140, 236, 600, 6);
     cairo_fill(cr);
     setRgb(cr, kAccent);
-    cairo_rectangle(cr, 140, 224, 600 * std::clamp(progress, 0.0f, 1.0f), 6);
+    cairo_rectangle(cr, 140, 236, 600 * std::clamp(progress, 0.0f, 1.0f), 6);
     cairo_fill(cr);
   }
   if (ready) {
@@ -2359,12 +2391,12 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
   cairo_pattern_destroy(bg);
 
   // Faceplate
-  roundRect(cr, 20, 62, kPanelWidth - 40, kPanelHeight - 82, 12);
+  roundRect(cr, 20, 62, kPanelWidth - 40, kPanelHeight - 70, 12);
   setRgb(cr, kPanel);
   cairo_fill(cr);
   cairo_set_line_width(cr, 1.0);
   setRgb(cr, kEdge, 0.8);
-  roundRect(cr, 20.5, 62.5, kPanelWidth - 41, kPanelHeight - 83, 12);
+  roundRect(cr, 20.5, 62.5, kPanelWidth - 41, kPanelHeight - 71, 12);
   cairo_stroke(cr);
 
   drawHeader(cr, shared, state);
@@ -2373,9 +2405,6 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
     drawSpectralPage(cr, shared, state);
   } else {
     drawStageVisual(cr, shared, state, state.tab);
-    if (state.tab == 6) {
-      drawAnalysis(cr, shared, state);
-    }
   }
 
   for (const Widget& w : widgets_) {
@@ -2398,9 +2427,14 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
     cairo_stroke(cr);
     text(cr, tip, tx + 8, ty + 16, 10, 0, kText.r, kText.g, kText.b);
   }
+  // Analysis results are an overlay, drawn after the knobs so they can never
+  // be covered by a widget.
+  if (state.tab == 6) {
+    drawAnalysis(cr, shared, state);
+  }
 
   // Footer / status
-  const double f = kPanelHeight - 46;
+  const double f = kPanelHeight - 54;
   setRgb(cr, kEdge, 0.55);
   cairo_rectangle(cr, 24, f, kPanelWidth - 48, 1);
   cairo_fill(cr);
@@ -2417,14 +2451,14 @@ void Panel::draw(cairo_t* cr, Shared& shared, const PanelState& state) {
                 "STFT %d / 75%%  ·  latency %.1f ms  ·  capture %.1f s  ·  "
                 "edits %d",
                 stftFrame, latencyMs, state.captureSeconds, state.editCount);
-  text(cr, status, 44, f + 28, 12, 0, kDim.r, kDim.g, kDim.b);
+  text(cr, status, 44, f + 26, 12, 0, kDim.r, kDim.g, kDim.b);
   if (state.transportValid) {
     char t[64];
     std::snprintf(t, sizeof(t), "host %8.3f s", state.transportSeconds);
-    text(cr, t, kPanelWidth - 44, f + 28, 12, 2, kAccent.r, kAccent.g,
+    text(cr, t, kPanelWidth - 44, f + 26, 12, 2, kAccent.r, kAccent.g,
          kAccent.b);
   } else {
-    text(cr, "no transport", kPanelWidth - 44, f + 28, 12, 2, kAmber.r,
+    text(cr, "no transport", kPanelWidth - 44, f + 26, 12, 2, kAmber.r,
          kAmber.g, kAmber.b);
   }
 

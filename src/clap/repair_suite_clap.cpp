@@ -190,6 +190,7 @@ public:
   void setSize(uint32_t width, uint32_t height) {
     hostW_.store(std::clamp(width, 320u, 6000u), std::memory_order_relaxed);
     hostH_.store(std::clamp(height, 240u, 4000u), std::memory_order_relaxed);
+    hasHostSize_.store(true, std::memory_order_relaxed);
   }
 
   bool open(void* parent) {
@@ -270,7 +271,12 @@ private:
     }
     const int screen = DefaultScreen(dpy);
     const Window parent = parentWindow_ ? parentWindow_ : RootWindow(dpy, screen);
-    if (parentWindow_) {
+    // Only take the parent geometry as a fallback on the very first open.
+    // When the editor is closed and reopened, the host may hand us a shared
+    // parent with a different allocation; adopting that made the window come
+    // back at the wrong size.  The host will call guiSetSize with the real
+    // editor size when it wants a resize.
+    if (parentWindow_ && !hasHostSize_.load(std::memory_order_relaxed)) {
       XWindowAttributes pa{};
       if (XGetWindowAttributes(dpy, parent, &pa) && pa.width >= 320 &&
           pa.height >= 240) {
@@ -296,9 +302,10 @@ private:
     const UiSize minSize = sizeForScale(kMinUiScale);
     const UiSize maxSize = sizeForScale(kMaxUiScale);
     XSizeHints hints{};
-    hints.flags = PAspect | PMinSize | PMaxSize;
-    hints.min_aspect.x = hints.max_aspect.x = kPanelWidth;
-    hints.min_aspect.y = hints.max_aspect.y = kPanelHeight;
+    // No PAspect: embedded editors must be free to fill whatever rectangle
+    // the host allocates.  The panel itself is letterboxed when the aspect
+    // does not match.
+    hints.flags = PMinSize | PMaxSize;
     hints.min_width = static_cast<int>(minSize.width);
     hints.min_height = static_cast<int>(minSize.height);
     hints.max_width = static_cast<int>(maxSize.width);
@@ -479,6 +486,22 @@ private:
                            logicalY(ev.xmotion.y), fine);
         break;
       }
+      case ConfigureNotify: {
+        // The host (or the user dragging the window edge) changed our size.
+        // Record it so guiGetSize() and the saved state report the real size
+        // instead of the default panel size.
+        const uint32_t w =
+            static_cast<uint32_t>(std::max(320, ev.xconfigure.width));
+        const uint32_t h =
+            static_cast<uint32_t>(std::max(240, ev.xconfigure.height));
+        if (w != hostW_.load(std::memory_order_relaxed) ||
+            h != hostH_.load(std::memory_order_relaxed)) {
+          hostW_.store(w, std::memory_order_relaxed);
+          hostH_.store(h, std::memory_order_relaxed);
+          hasHostSize_.store(true, std::memory_order_relaxed);
+        }
+        break;
+      }
       case Expose:
       case MapNotify:
       case VisibilityNotify:
@@ -497,6 +520,7 @@ private:
   XdndDropTarget xdnd_;
   std::atomic<uint32_t> hostW_{kPanelWidth};
   std::atomic<uint32_t> hostH_{kPanelHeight};
+  std::atomic<bool> hasHostSize_{false};
   std::atomic<bool> showRequested_{false};
   std::mutex mutex_;
   std::condition_variable cv_;
@@ -804,6 +828,20 @@ bool stateSave(const clap_plugin_t* p, const clap_ostream_t* stream) {
       return false;
     }
   }
+  // Exact editor size, so reopening a session restores the same window even
+  // when the host does not persist the child rectangle itself.
+  constexpr uint32_t kSizeMagic = 0x52535831u;  // "RSX1"
+  const UiSize editorSize = s->editor.size();
+  const double sizeW = static_cast<double>(editorSize.width);
+  const double sizeH = static_cast<double>(editorSize.height);
+  if (stream->write(stream, &kSizeMagic, sizeof(kSizeMagic)) !=
+          static_cast<int64_t>(sizeof(kSizeMagic)) ||
+      stream->write(stream, &sizeW, sizeof(sizeW)) !=
+          static_cast<int64_t>(sizeof(sizeW)) ||
+      stream->write(stream, &sizeH, sizeof(sizeH)) !=
+          static_cast<int64_t>(sizeof(sizeH))) {
+    return false;
+  }
   return true;
 }
 
@@ -884,6 +922,20 @@ bool stateLoad(const clap_plugin_t* p, const clap_istream_t* stream) {
     s->shared.editCount.store(s->engine.capture().editCount(),
                               std::memory_order_relaxed);
   }
+  // Optional exact editor size written by newer versions.
+  uint32_t sizeMagic = 0;
+  double sizeW = 0.0, sizeH = 0.0;
+  if (stream->read(stream, &sizeMagic, sizeof(sizeMagic)) ==
+          static_cast<int64_t>(sizeof(sizeMagic)) &&
+      sizeMagic == 0x52535831u &&
+      stream->read(stream, &sizeW, sizeof(sizeW)) ==
+          static_cast<int64_t>(sizeof(sizeW)) &&
+      stream->read(stream, &sizeH, sizeof(sizeH)) ==
+          static_cast<int64_t>(sizeof(sizeH)) &&
+      sizeW >= 320.0 && sizeH >= 240.0) {
+    s->editor.setSize(static_cast<uint32_t>(sizeW),
+                      static_cast<uint32_t>(sizeH));
+  }
   return true;
 }
 
@@ -962,17 +1014,18 @@ bool guiCanResize(const clap_plugin_t*) { return true; }
 bool guiGetResizeHints(const clap_plugin_t*, clap_gui_resize_hints_t* hints) {
   hints->can_resize_horizontally = true;
   hints->can_resize_vertically = true;
-  hints->preserve_aspect_ratio = true;
+  hints->preserve_aspect_ratio = false;
   hints->aspect_ratio_width = kPanelWidth;
   hints->aspect_ratio_height = kPanelHeight;
   return true;
 }
 
-// Returns the nearest valid size; the editor always keeps 1040:640.
+// The editor fills whatever rectangle the host provides; the panel is
+// letterboxed inside it.  Forcing a fixed aspect here made hosts that embed
+// the editor (REAPER) restore a different size than the user chose.
 bool guiAdjustSize(const clap_plugin_t*, uint32_t* width, uint32_t* height) {
-  const UiSize s = snapSize(*width, *height);
-  *width = s.width;
-  *height = s.height;
+  *width = std::clamp(*width, 320u, 6000u);
+  *height = std::clamp(*height, 240u, 4000u);
   return true;
 }
 

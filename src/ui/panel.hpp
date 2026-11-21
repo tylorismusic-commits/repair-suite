@@ -245,6 +245,7 @@ private:
   std::vector<float> captureR_;
   double captureStart_ = 0.0;
   bool captureLoaded_ = false;
+  int liveCaptureTick_ = 0;
   bool selectionDrag_ = false;
   double selectionStartX_ = 0.0;
   double selectionStartY_ = 0.0;

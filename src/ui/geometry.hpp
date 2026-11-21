@@ -11,11 +11,10 @@
 namespace repair {
 
 // The editor is laid out once in logical units (kPanelWidth x kPanelHeight)
-// and scaled uniformly.  Scales move in steps of 1/80, because 1040 = 13 * 80
-// and 640 = 8 * 80: every step gives an exact 1040:640 window, with no rounding
-// drift between width and height.
+// and scaled uniformly.  Embedded hosts give us an arbitrary rectangle, so we
+// letterbox the panel instead of forcing a specific aspect ratio.
 constexpr int kScaleSteps = 80;
-constexpr int kMinScaleStep = 40;   // 0.5x
+constexpr int kMinScaleStep = 20;   // 0.25x
 constexpr int kMaxScaleStep = 200;  // 2.5x
 constexpr double kMinUiScale = static_cast<double>(kMinScaleStep) / kScaleSteps;
 constexpr double kMaxUiScale = static_cast<double>(kMaxScaleStep) / kScaleSteps;
@@ -47,8 +46,9 @@ inline double scaleForRequest(uint32_t width, uint32_t height) {
 
 inline UiSize sizeForScale(double scale) {
   const int step = scaleStep(scale);
-  return {static_cast<uint32_t>(kPanelWidth / kScaleSteps * step),
-          static_cast<uint32_t>(kPanelHeight / kScaleSteps * step)};
+  const double s = static_cast<double>(step) / kScaleSteps;
+  return {static_cast<uint32_t>(std::lround(kPanelWidth * s)),
+          static_cast<uint32_t>(std::lround(kPanelHeight * s))};
 }
 
 inline UiSize snapSize(uint32_t width, uint32_t height) {

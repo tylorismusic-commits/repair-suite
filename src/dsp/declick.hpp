@@ -237,9 +237,11 @@ private:
           sig[static_cast<size_t>(i)] - v[2];
     }
     double sumSq = 0.0;
+    float peakAbs = 0.0f;
     for (int i = 0; i < kWindow; ++i) {
-      sumSq += static_cast<double>(sig[static_cast<size_t>(i)]) *
-               sig[static_cast<size_t>(i)];
+      const float av = std::fabs(sig[static_cast<size_t>(i)]);
+      peakAbs = std::max(peakAbs, av);
+      sumSq += static_cast<double>(av) * av;
       absRes_[static_cast<size_t>(i)] =
           std::fabs(residual[static_cast<size_t>(i)]);
     }
@@ -251,7 +253,11 @@ private:
     const float rms = static_cast<float>(std::sqrt(sumSq / kWindow));
     const float sens = std::clamp(controls_.clickSensitivity, 0.0f, 10.0f);
     const float factor = std::clamp(8.0f - 0.7f * sens, 0.6f, 12.0f);
-    const float threshold = std::max(sigma * factor, rms * 0.002f);
+    // A peak-relative floor stops low-level noise and breath from being
+    // mistaken for clicks.  Those false detections were replacing harmless
+    // samples with interpolated ones and could sound like added crackle.
+    const float threshold =
+        std::max(std::max(sigma * factor, rms * 0.002f), peakAbs * 0.045f);
     for (int i = 2; i < kWindow - 2; ++i) {
       if (std::fabs(residual[static_cast<size_t>(i)]) <= threshold) {
         continue;

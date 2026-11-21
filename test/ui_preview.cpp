@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <cairo.h>
 
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include <cmath>
@@ -34,6 +35,17 @@ int main(int argc, char** argv) {
     shared.hostTempo.store(true, std::memory_order_relaxed);
   }
 
+  if (tab == 6 && std::getenv("REPAIR_PREVIEW_ANALYSIS")) {
+    shared.analysisReady.store(true, std::memory_order_relaxed);
+    shared.analysisHumHz.store(60.0f, std::memory_order_relaxed);
+    shared.analysisHumDb.store(-28.0f, std::memory_order_relaxed);
+    shared.analysisNoiseDb.store(-54.0f, std::memory_order_relaxed);
+    shared.analysisClipPct.store(0.4f, std::memory_order_relaxed);
+    shared.analysisClickRate.store(2.7f, std::memory_order_relaxed);
+    shared.analysisReverbSec.store(0.62f, std::memory_order_relaxed);
+    state.analysisApply[0] = true;
+    state.analysisApply[3] = true;
+  }
   if (tab == 5) {
     SpectralCapture capture;
     capture.prepare(48000.0f, 2.0f);

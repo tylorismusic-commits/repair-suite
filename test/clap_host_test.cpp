@@ -28,13 +28,13 @@ int64_t streamWrite(const clap_ostream_t* stream, const void* buffer,
   out->insert(out->end(), bytes, bytes + size);
   return static_cast<int64_t>(size);
 }
+size_t gReadOffset = 0;
 int64_t streamRead(const clap_istream_t* stream, void* buffer, uint64_t size) {
   auto* in = static_cast<std::vector<uint8_t>*>(stream->ctx);
-  static size_t offset = 0;
-  const size_t available = in->size() - offset;
+  const size_t available = in->size() - gReadOffset;
   const size_t n = std::min<size_t>(available, size);
-  std::memcpy(buffer, in->data() + offset, n);
-  offset += n;
+  std::memcpy(buffer, in->data() + gReadOffset, n);
+  gReadOffset += n;
   return static_cast<int64_t>(n);
 }
 } // namespace
@@ -167,10 +167,37 @@ int main(int argc, char** argv) {
     clap_istream_t in{};
     in.ctx = &saved;
     in.read = streamRead;
+    gReadOffset = 0;
     assert(state->load(plugin, &in));
     double restored = 0.0;
     assert(params->get_value(plugin, repair::P_INPUT, &restored));
     assert(std::fabs(restored - 6.0) < 1.0e-9);
+  }
+
+  // GUI size round-trip: a resized editor must come back at the same size.
+  {
+    const auto* gui = static_cast<const clap_plugin_gui_t*>(
+        plugin->get_extension(plugin, CLAP_EXT_GUI));
+    const auto* state = static_cast<const clap_plugin_state_t*>(
+        plugin->get_extension(plugin, CLAP_EXT_STATE));
+    assert(gui && state && gui->set_size && gui->get_size);
+    assert(gui->set_size(plugin, 1300, 800));
+    uint32_t w = 0, h = 0;
+    assert(gui->get_size(plugin, &w, &h));
+    assert(w == 1300 && h == 800);
+    std::vector<uint8_t> saved;
+    clap_ostream_t out{};
+    out.ctx = &saved;
+    out.write = streamWrite;
+    assert(state->save(plugin, &out));
+    assert(gui->set_size(plugin, 1040, 640));
+    clap_istream_t in{};
+    in.ctx = &saved;
+    in.read = streamRead;
+    gReadOffset = 0;
+    assert(state->load(plugin, &in));
+    assert(gui->get_size(plugin, &w, &h));
+    assert(w == 1300 && h == 800);
   }
 
   plugin->destroy(plugin);

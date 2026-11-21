@@ -171,12 +171,11 @@ public:
         !right || frames <= 0) {
       return;
     }
+    // Hosts that do not publish a transport timeline used to make capture a
+    // no-op.  Fall back to a capture-relative clock so the spectrogram still
+    // shows the input.
     if (!transportValid) {
-      captureStartValid_ = false;
-      write_ = 0;
-      count_ = 0;
-      countAtomic_.store(0, std::memory_order_relaxed);
-      return;
+      blockStartTime = static_cast<double>(count_) / sampleRate_;
     }
     if (captureStartValid_) {
       const double expected =
@@ -208,11 +207,11 @@ public:
   int capturedFrames() const noexcept {
     return countAtomic_.load(std::memory_order_relaxed);
   }
-  double captureStartTime() const noexcept { return captureStartTime_; }
+  double captureStartTime() const override { return captureStartTime_; }
   bool captureValid() const noexcept { return captureStartValid_; }
 
   int copyCaptured(std::vector<float>* left,
-                   std::vector<float>* right) const {
+                   std::vector<float>* right) const override {
     if (!left || !right) {
       return 0;
     }

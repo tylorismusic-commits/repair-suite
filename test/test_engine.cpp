@@ -101,6 +101,16 @@ void testCaptureOverlay() {
   assert(cap.capturedFrames() == n);
   assert(std::fabs(cap.captureStartTime() - 10.0) < 1.0e-9);
 
+  // Hosts without a transport timeline must still fill the capture buffer so
+  // the spectrogram can show the input.
+  {
+    repair::SpectralCapture noTransport;
+    noTransport.prepare(kSr, 1.0f);
+    noTransport.setArmed(true);
+    noTransport.push(l.data(), r.data(), n, 0.0, false);
+    assert(noTransport.capturedFrames() == n);
+  }
+
   std::vector<float> cl, cr;
   assert(cap.copyCaptured(&cl, &cr) == n);
   assert(std::fabs(cl[0] - 0.25f) < 1.0e-6f);

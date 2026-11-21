@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- The editor remembers its exact width and height, including when the host
+  embeds it in a differently sized FX window.
+- Spectral capture shows a live preview while armed, and works without a host
+  transport timeline.
+- Auto Analyze results are drawn as an overlay above the knobs.
+- Footer status now sits inside the faceplate instead of under its edge.
+- De-click ignores low-level noise relative to the block peak, so clean
+  passages are not replaced with interpolated samples.
+
 ## 0.1.0-alpha.1 — 2026-11-18
 
 First public alpha.
