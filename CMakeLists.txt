@@ -28,13 +28,80 @@ find_package(Threads REQUIRED)
 pkg_check_modules(LV2 REQUIRED IMPORTED_TARGET lv2)
 pkg_check_modules(CAIRO REQUIRED IMPORTED_TARGET cairo)
 pkg_check_modules(FREETYPE REQUIRED IMPORTED_TARGET freetype2)
-pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
+# The editor hosts are X11 on Linux (the CLAP editor is Cocoa on macOS), so
+# X11 stays optional.  Linux CI can pass -DSUITE_NO_X11=ON to build the same
+# subset that macOS builds.
+option(SUITE_NO_X11 "Skip X11 editor targets (portable subset)" OFF)
+if(APPLE OR SUITE_NO_X11)
+  set(SUITE_X11 OFF)
+else()
+  pkg_check_modules(X11 REQUIRED IMPORTED_TARGET x11)
+  set(SUITE_X11 ON)
+endif()
 
 set(REPAIR_UI_SOURCES src/ui/panel.cpp)
 
 # ---------------------------------------------------------------------------
-# CLAP
+# CLAP plugin: one cairo editor (X11 on Linux, Cocoa on macOS).
 # ---------------------------------------------------------------------------
+set(REPAIR_RESOURCE_FILES
+  "${CMAKE_SOURCE_DIR}/assets/fonts/Jost-ExtraBold.ttf"
+  "${CMAKE_SOURCE_DIR}/assets/fonts/OFL.txt")
+
+if(APPLE)
+enable_language(OBJCXX)
+add_library(repair_suite MODULE
+  src/clap/repair_suite_clap.cpp
+  ${REPAIR_UI_SOURCES}
+  src/ui/cocoa_view.mm)
+target_include_directories(repair_suite PRIVATE
+  "${CMAKE_SOURCE_DIR}/src"
+  "${CMAKE_SOURCE_DIR}/third_party/clap/include"
+  ${CAIRO_INCLUDE_DIRS})
+target_compile_definitions(repair_suite PRIVATE SUITE_MACOS_COCOA=1)
+target_compile_options(repair_suite PRIVATE -fobjc-arc)
+target_link_libraries(repair_suite PRIVATE
+  PkgConfig::CAIRO PkgConfig::FREETYPE
+  "-framework Cocoa" "-framework CoreGraphics" "-framework QuartzCore"
+  Threads::Threads ${CMAKE_DL_LIBS})
+target_compile_features(repair_suite PRIVATE cxx_std_17)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(repair_suite PRIVATE -Wall -Wextra -fvisibility=hidden)
+endif()
+set_target_properties(repair_suite PROPERTIES
+  PREFIX ""
+  OUTPUT_NAME "RepairSuite"
+  SUFFIX ".dylib"
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/macos")
+
+set(REPAIR_CLAP_BUNDLE "${CMAKE_BINARY_DIR}/clap/RepairSuite.clap")
+find_program(DYLIBBUNDLER dylibbundler)
+# Always recreated: a bundle left over from an earlier build can hide a
+# changed executable or stale resources.
+add_custom_target(repair_suite_bundle ALL
+  COMMAND ${CMAKE_COMMAND} -E remove_directory "${REPAIR_CLAP_BUNDLE}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory
+          "${REPAIR_CLAP_BUNDLE}/Contents/MacOS"
+  COMMAND ${CMAKE_COMMAND} -E copy
+          "$<TARGET_FILE:repair_suite>"
+          "${REPAIR_CLAP_BUNDLE}/Contents/MacOS/RepairSuite"
+  COMMAND ${CMAKE_COMMAND} -E copy
+          "${CMAKE_SOURCE_DIR}/packaging/macos/Info.plist"
+          "${REPAIR_CLAP_BUNDLE}/Contents/Info.plist"
+  COMMAND ${CMAKE_COMMAND} -E make_directory
+          "${REPAIR_CLAP_BUNDLE}/Contents/Resources/RepairSuite.resources"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different ${REPAIR_RESOURCE_FILES}
+          "${REPAIR_CLAP_BUNDLE}/Contents/Resources/RepairSuite.resources/"
+  DEPENDS repair_suite ${REPAIR_RESOURCE_FILES})
+if(DYLIBBUNDLER)
+  add_custom_command(TARGET repair_suite_bundle POST_BUILD
+    COMMAND "${DYLIBBUNDLER}" -od -b
+            -x "${REPAIR_CLAP_BUNDLE}/Contents/MacOS/RepairSuite"
+            -d "${REPAIR_CLAP_BUNDLE}/Contents/Frameworks"
+            -p "@loader_path/../Frameworks")
+endif()
+install(DIRECTORY "${REPAIR_CLAP_BUNDLE}" DESTINATION "${CLAP_DIR}")
+elseif(SUITE_X11)
 add_library(repair_suite MODULE
   src/clap/repair_suite_clap.cpp
   ${REPAIR_UI_SOURCES})
@@ -54,10 +121,6 @@ set_target_properties(repair_suite PROPERTIES
   SUFFIX ".clap"
   LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/clap")
 
-set(REPAIR_RESOURCE_FILES
-  "${CMAKE_SOURCE_DIR}/assets/fonts/Jost-ExtraBold.ttf"
-  "${CMAKE_SOURCE_DIR}/assets/fonts/OFL.txt")
-
 add_custom_target(repair_suite_bundle ALL
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/clap/RepairSuite.resources"
   COMMAND ${CMAKE_COMMAND} -E copy_if_different ${REPAIR_RESOURCE_FILES}
@@ -67,6 +130,7 @@ add_custom_target(repair_suite_bundle ALL
 install(TARGETS repair_suite LIBRARY DESTINATION "${CLAP_DIR}")
 install(FILES ${REPAIR_RESOURCE_FILES}
         DESTINATION "${CLAP_DIR}/RepairSuite.resources")
+endif()  # APPLE / SUITE_X11
 
 # ---------------------------------------------------------------------------
 # LV2
@@ -82,6 +146,7 @@ set_target_properties(repair_suite_lv2 PROPERTIES
   OUTPUT_NAME "repair_suite"
   LIBRARY_OUTPUT_DIRECTORY "${LV2_BUNDLE_DIR}")
 
+if(SUITE_X11)
 add_library(repair_suite_lv2_ui MODULE src/ui/lv2_ui.cpp ${REPAIR_UI_SOURCES})
 target_include_directories(repair_suite_lv2_ui PRIVATE
   "${CMAKE_SOURCE_DIR}/src")
@@ -93,6 +158,7 @@ set_target_properties(repair_suite_lv2_ui PROPERTIES
   PREFIX ""
   OUTPUT_NAME "repair_suite_ui"
   LIBRARY_OUTPUT_DIRECTORY "${LV2_BUNDLE_DIR}")
+endif()  # SUITE_X11
 
 add_custom_target(repair_suite_lv2_bundle ALL
   COMMAND ${CMAKE_COMMAND} -E make_directory "${LV2_BUNDLE_DIR}"
@@ -103,8 +169,12 @@ add_custom_target(repair_suite_lv2_bundle ALL
           "${CMAKE_SOURCE_DIR}/assets/fonts/Jost-ExtraBold.ttf"
           "${CMAKE_SOURCE_DIR}/assets/fonts/OFL.txt"
           "${LV2_BUNDLE_DIR}/"
-  DEPENDS repair_suite_lv2 repair_suite_lv2_ui)
+  DEPENDS repair_suite_lv2)
+if(SUITE_X11)
+  add_dependencies(repair_suite_lv2_bundle repair_suite_lv2_ui)
+endif()
 
+if(SUITE_X11)
 add_custom_target(dist
   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/dist"
   COMMAND ${CMAKE_COMMAND} -E tar czf
@@ -113,9 +183,13 @@ add_custom_target(dist
   WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
   DEPENDS repair_suite_lv2_bundle repair_suite_bundle
   COMMENT "Packing repair-suite-${PROJECT_VERSION}")
+endif()  # SUITE_X11
 
-install(TARGETS repair_suite_lv2 repair_suite_lv2_ui
-        LIBRARY DESTINATION "${LV2_DIR}/repair-suite.lv2")
+install(TARGETS repair_suite_lv2 LIBRARY DESTINATION "${LV2_DIR}/repair-suite.lv2")
+if(SUITE_X11)
+  install(TARGETS repair_suite_lv2_ui
+          LIBRARY DESTINATION "${LV2_DIR}/repair-suite.lv2")
+endif()
 install(FILES
   lv2/manifest.ttl
   lv2/repair_suite.ttl
@@ -148,6 +222,7 @@ target_compile_features(repair_ui_preview PRIVATE cxx_std_17)
 # ---------------------------------------------------------------------------
 pkg_check_modules(LILV QUIET IMPORTED_TARGET lilv-0)
 
+if(APPLE OR SUITE_X11)
 add_executable(repair_clap_host_test test/clap_host_test.cpp)
 target_include_directories(repair_clap_host_test PRIVATE
   "${CMAKE_SOURCE_DIR}/src"
@@ -155,8 +230,16 @@ target_include_directories(repair_clap_host_test PRIVATE
 target_link_libraries(repair_clap_host_test PRIVATE ${CMAKE_DL_LIBS})
 target_compile_features(repair_clap_host_test PRIVATE cxx_std_17)
 add_dependencies(repair_clap_host_test repair_suite_bundle)
+if(APPLE)
+  # The macOS CLAP is a bundle; dlopen the executable inside Contents/MacOS.
+  set(REPAIR_CLAP_TEST_MODULE
+    "${REPAIR_CLAP_BUNDLE}/Contents/MacOS/RepairSuite")
+else()
+  set(REPAIR_CLAP_TEST_MODULE "${CMAKE_BINARY_DIR}/clap/RepairSuite.clap")
+endif()
 add_test(NAME repair_clap_host
-  COMMAND repair_clap_host_test "${CMAKE_BINARY_DIR}/clap/RepairSuite.clap")
+  COMMAND repair_clap_host_test "${REPAIR_CLAP_TEST_MODULE}")
+endif()  # APPLE / SUITE_X11
 
 if(LILV_FOUND)
   add_executable(repair_lv2_host_test test/lv2_host_test.cpp)
@@ -170,6 +253,7 @@ if(LILV_FOUND)
 
 endif()
 
+if(SUITE_X11)
 find_program(XVFB_RUN xvfb-run)
 add_executable(repair_clap_gui_host_test test/clap_gui_host_test.cpp)
 target_include_directories(repair_clap_gui_host_test PRIVATE
@@ -204,6 +288,7 @@ else()
   add_test(NAME repair_lv2_ui_host
     COMMAND repair_lv2_ui_host_test "${LV2_BUNDLE_DIR}/repair_suite_ui.so")
 endif()
+endif()  # SUITE_X11
 
 add_executable(repair_ttl_gen tools/gen_ttl.cpp)
 target_include_directories(repair_ttl_gen PRIVATE "${CMAKE_SOURCE_DIR}/src")
@@ -245,10 +330,16 @@ target_compile_options(repair_engine_test PRIVATE -UNDEBUG)
 
 target_compile_options(repair_panel_test PRIVATE -UNDEBUG)
 
-target_compile_options(repair_clap_host_test PRIVATE -UNDEBUG)
+if(APPLE OR SUITE_X11)
+  target_compile_options(repair_clap_host_test PRIVATE -UNDEBUG)
+endif()
 
-target_compile_options(repair_lv2_host_test PRIVATE -UNDEBUG)
+if(LILV_FOUND)
+  target_compile_options(repair_lv2_host_test PRIVATE -UNDEBUG)
+endif()
 
-target_compile_options(repair_clap_gui_host_test PRIVATE -UNDEBUG)
+if(SUITE_X11)
+  target_compile_options(repair_clap_gui_host_test PRIVATE -UNDEBUG)
 
-target_compile_options(repair_lv2_ui_host_test PRIVATE -UNDEBUG)
+  target_compile_options(repair_lv2_ui_host_test PRIVATE -UNDEBUG)
+endif()

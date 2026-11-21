@@ -3,10 +3,12 @@
 
 #include <clap/all.h>
 
+#ifndef SUITE_MACOS_COCOA
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/keysym.h>
 #include <cairo-xlib.h>
+#endif
 #include <dlfcn.h>
 #include <sys/time.h>
 
@@ -29,7 +31,13 @@
 #include "version.hpp"
 #include "ui/geometry.hpp"
 #include "ui/panel.hpp"
+#ifndef SUITE_MACOS_COCOA
 #include "ui/xdnd.hpp"
+#else
+#include <memory>
+
+#include "ui/cocoa_view.hpp"
+#endif
 
 namespace repair {
 namespace {
@@ -68,11 +76,91 @@ std::string bundleResourceDir() {
     if (slash != std::string::npos) {
       path = path.substr(0, slash);
     }
+#ifdef SUITE_MACOS_COCOA
+    // Resources live in Contents/Resources, next to Contents/MacOS.
+    return path + "/../Resources/RepairSuite.resources";
+#else
     return path + "/RepairSuite.resources";
+#endif
   }
   return "RepairSuite.resources";
 }
 
+// ---------------------------------------------------------------------------
+// macOS editor: the panel lives in a Cocoa NSView created by the host.  There
+// is no editor thread; the NSView's 30 Hz timer ticks the panel and draws it.
+// ---------------------------------------------------------------------------
+
+#ifdef SUITE_MACOS_COCOA
+class Editor {
+public:
+  explicit Editor(Shared& shared) : shared_(shared) {}
+
+  std::function<void()> requestFlush;
+
+  double scale() const {
+    return layoutScale(hostW_.load(std::memory_order_relaxed),
+                       hostH_.load(std::memory_order_relaxed));
+  }
+  UiSize size() const {
+    return {hostW_.load(std::memory_order_relaxed),
+            hostH_.load(std::memory_order_relaxed)};
+  }
+
+  void setSize(uint32_t width, uint32_t height) {
+    hostW_.store(std::clamp(width, 320u, 6000u), std::memory_order_relaxed);
+    hostH_.store(std::clamp(height, 240u, 4000u), std::memory_order_relaxed);
+    hasHostSize_.store(true, std::memory_order_relaxed);
+    if (cocoa_) {
+      const UiSize s = size();
+      cocoa_->resize(static_cast<int>(s.width), static_cast<int>(s.height));
+    }
+  }
+
+  bool open(void* parent) {
+    if (!cocoa_) {
+      panel_.loadFont(bundleResourceDir());
+      cocoa_ = std::make_unique<CocoaView>();
+      cocoa_->setContent(&panel_, &shared_, &state_);
+    }
+    if (parent) cocoa_->attach(parent);
+    return true;
+  }
+
+  void show() {}
+  void hide() {}
+
+  void close() {
+    cocoa_.reset();
+    // Compare mode and learn actions must never outlive the editor.
+    shared_.compare.store(false, std::memory_order_relaxed);
+    shared_.captureActive.store(false, std::memory_order_relaxed);
+    shared_.noiseLearnActive.store(false, std::memory_order_relaxed);
+    if (auto* bridge =
+            shared_.spectralBridge.load(std::memory_order_relaxed)) {
+      bridge->clearPreview();
+    }
+    state_.editParam = -1;
+  }
+
+  ~Editor() { close(); }
+
+private:
+  static double layoutScale(uint32_t width, uint32_t height) {
+    const double sx = static_cast<double>(width) / kPanelWidth;
+    const double sy = static_cast<double>(height) / kPanelHeight;
+    return std::clamp(std::min(sx, sy), kMinUiScale, kMaxUiScale);
+  }
+
+  Shared& shared_;
+  PanelState state_;
+  Panel panel_;
+  std::atomic<uint32_t> hostW_{kPanelWidth};
+  std::atomic<uint32_t> hostH_{kPanelHeight};
+  std::atomic<bool> hasHostSize_{false};
+  std::unique_ptr<CocoaView> cocoa_;
+};
+#else
 // ---------------------------------------------------------------------------
 // X11 editor.  Owns the window and the Cairo surface, and runs its own
 // thread so the host's audio and main threads are never blocked on drawing.
@@ -420,6 +508,7 @@ private:
   bool quitting_ = false;
   std::thread thread_;
 };
+#endif  // SUITE_MACOS_COCOA
 
 // ---------------------------------------------------------------------------
 // Plugin
@@ -836,11 +925,20 @@ const clap_plugin_audio_ports_t kAudioPortsExt = {audioPortsCount, audioPortsInf
 // --- GUI --------------------------------------------------------------------
 
 bool guiIsApiSupported(const clap_plugin_t*, const char* api, bool isFloating) {
+#ifdef SUITE_MACOS_COCOA
+  (void)isFloating;
+  return api && std::strcmp(api, CLAP_WINDOW_API_COCOA) == 0;
+#else
   return !isFloating && api && std::strcmp(api, CLAP_WINDOW_API_X11) == 0;
+#endif
 }
 
 bool guiGetPreferredApi(const clap_plugin_t*, const char** api, bool* isFloating) {
+#ifdef SUITE_MACOS_COCOA
+  *api = CLAP_WINDOW_API_COCOA;
+#else
   *api = CLAP_WINDOW_API_X11;
+#endif
   *isFloating = false;
   return true;
 }
@@ -884,9 +982,13 @@ bool guiSetSize(const clap_plugin_t* p, uint32_t width, uint32_t height) {
 }
 
 bool guiSetParent(const clap_plugin_t* p, const clap_window_t* window) {
+#ifdef SUITE_MACOS_COCOA
+  return self(p)->editor.open(window->cocoa);
+#else
   return self(p)->editor.open(window->x11 ? reinterpret_cast<void*>(
                                                 static_cast<uintptr_t>(window->x11))
                                           : nullptr);
+#endif
 }
 
 bool guiSetTransient(const clap_plugin_t*, const clap_window_t*) { return false; }
