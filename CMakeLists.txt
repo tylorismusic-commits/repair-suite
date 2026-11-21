@@ -103,6 +103,74 @@ endif()
 # The bundle only exists after the build; create the path so the install
 # rule is valid at configure time.
 file(MAKE_DIRECTORY "${REPAIR_CLAP_BUNDLE}")
+# ---------------------------------------------------------------------------
+# VST3 and AUv2 projections of the same CLAP (clap-wrapper)
+#
+# Both wrappers load the .clap we just built from their own Contents/PlugIns,
+# so the bundles stay self-contained: no copy of the plug-in has to be
+# installed for the wrapper to work.
+# ---------------------------------------------------------------------------
+set(CLAP_WRAPPER_DOWNLOAD_DEPENDENCIES ON)
+add_subdirectory(third_party/clap-wrapper EXCLUDE_FROM_ALL)
+
+set(REPAIR_VST3_BUNDLE "${CMAKE_BINARY_DIR}/vst3/RepairSuite.vst3")
+set(REPAIR_AUV2_BUNDLE "${CMAKE_BINARY_DIR}/au/RepairSuite.component")
+
+add_library(repair_suite_vst3 MODULE)
+add_dependencies(repair_suite_vst3 repair_suite_bundle)
+target_add_vst3_wrapper(TARGET repair_suite_vst3
+  OUTPUT_NAME "RepairSuite"
+  BUNDLE_IDENTIFIER "com.tylorismusic.repairsuite"
+  BUNDLE_VERSION "${PROJECT_VERSION}"
+  ASSET_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/vst3"
+  MACOS_EMBEDDED_CLAP_LOCATION "${REPAIR_CLAP_BUNDLE}")
+
+add_library(repair_suite_auv2 MODULE)
+add_dependencies(repair_suite_auv2 repair_suite_bundle)
+target_add_auv2_wrapper(TARGET repair_suite_auv2
+  OUTPUT_NAME "RepairSuite"
+  BUNDLE_IDENTIFIER "com.tylorismusic.repairsuite"
+  BUNDLE_VERSION "${PROJECT_VERSION}"
+  MANUFACTURER_NAME "tylorismusic"
+  MANUFACTURER_CODE "Tylr"
+  SUBTYPE_CODE "RpSu"
+  INSTRUMENT_TYPE "aufx"
+  MACOS_EMBEDDED_CLAP_LOCATION "${REPAIR_CLAP_BUNDLE}")
+# The AUv2 build helper loads the CLAP bundle to read its metadata, and
+# clap-wrapper only orders it after the CLAP library -- not after our bundle
+# target, whose POST_BUILD runs dylibbundler over the same bundle.  Without
+# this the helper can dlopen a bundle that is being rewritten (SIGSEGV).
+add_dependencies(repair_suite-build-helper repair_suite_bundle)
+set_target_properties(repair_suite_auv2 PROPERTIES
+  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/au")
+
+# The wrapper generates Contents/Info.plist with its AudioComponents entry at
+# build time and copies it PRE_BUILD.  With the Makefile generator CMake then
+# writes its own default bundle plist, which has no AudioComponents, so the
+# component never registers (auval: "didn't find the component").  Copy the
+# generated plist again POST_BUILD; the signing targets run afterwards.
+add_custom_command(TARGET repair_suite_auv2 POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy
+          "${CMAKE_BINARY_DIR}/repair_suite_auv2-build-helper-output/auv2_Info.plist"
+          "$<TARGET_BUNDLE_DIR:repair_suite_auv2>/Contents/Info.plist"
+  COMMENT "Installing the generated AUv2 Info.plist")
+
+# Embedding the CLAP happens PRE_BUILD, which invalidates any signature the
+# wrapper had, so re-sign the finished bundles.
+find_program(CODESIGN codesign)
+if(CODESIGN)
+  add_custom_target(repair_suite_vst3_sign ALL
+    COMMAND "${CODESIGN}" --force --deep --sign - "${REPAIR_VST3_BUNDLE}"
+    COMMENT "Ad-hoc signing ${REPAIR_VST3_BUNDLE}"
+    DEPENDS repair_suite_vst3
+    VERBATIM)
+  add_custom_target(repair_suite_auv2_sign ALL
+    COMMAND "${CODESIGN}" --force --deep --sign - "${REPAIR_AUV2_BUNDLE}"
+    COMMENT "Ad-hoc signing ${REPAIR_AUV2_BUNDLE}"
+    DEPENDS repair_suite_auv2
+    VERBATIM)
+endif()
+
 install(DIRECTORY "${REPAIR_CLAP_BUNDLE}" DESTINATION "${CLAP_DIR}")
 elseif(SUITE_X11)
 add_library(repair_suite MODULE
