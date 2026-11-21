@@ -100,6 +100,9 @@ if(DYLIBBUNDLER)
             -d "${REPAIR_CLAP_BUNDLE}/Contents/Frameworks"
             -p "@loader_path/../Frameworks")
 endif()
+# The bundle only exists after the build; create the path so the install
+# rule is valid at configure time.
+file(MAKE_DIRECTORY "${REPAIR_CLAP_BUNDLE}")
 install(DIRECTORY "${REPAIR_CLAP_BUNDLE}" DESTINATION "${CLAP_DIR}")
 elseif(SUITE_X11)
 add_library(repair_suite MODULE
